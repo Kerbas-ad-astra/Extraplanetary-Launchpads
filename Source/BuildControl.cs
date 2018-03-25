@@ -26,7 +26,7 @@ using KSP.IO;
 
 namespace ExtraplanetaryLaunchpads {
 
-	public class ExBuildControl : ExWorkSink
+	public class ELBuildControl : ELWorkSink
 	{
 		public class Box
 		{
@@ -47,6 +47,11 @@ namespace ExtraplanetaryLaunchpads {
 				max.x = Mathf.Max (max.x, b.max.x);
 				max.y = Mathf.Max (max.y, b.max.y);
 				max.z = Mathf.Max (max.z, b.max.z);
+			}
+
+			public override string ToString ()
+			{
+				return "[" + min + "," + max + "]";
 			}
 		}
 		public interface IBuilder
@@ -75,7 +80,7 @@ namespace ExtraplanetaryLaunchpads {
 			{
 				get;
 			}
-			ExBuildControl control
+			ELBuildControl control
 			{
 				get;
 			}
@@ -92,10 +97,9 @@ namespace ExtraplanetaryLaunchpads {
 			private set;
 		}
 
-		public enum CraftType { VAB, SPH, SubAss };
 		public enum State { Idle, Planning, Building, Canceling, Dewarping, Complete, Transfer };
 
-		public CraftType craftType = CraftType.VAB;
+		public ELCraftType craftType = ELCraftType.VAB;
 
 		public string filename
 		{
@@ -105,7 +109,7 @@ namespace ExtraplanetaryLaunchpads {
 		public string flagname
 		{
 			get;
-			private set;
+			set;
 		}
 		public bool lockedParts
 		{
@@ -117,12 +121,12 @@ namespace ExtraplanetaryLaunchpads {
 			get;
 			private set;
 		}
-		public VesselResources padResources
+		public RMResourceSet padResources
 		{
 			get;
 			private set;
 		}
-		public VesselResources craftResources
+		public RMResourceSet craftResources
 		{
 			get;
 			private set;
@@ -149,9 +153,25 @@ namespace ExtraplanetaryLaunchpads {
 		}
 		public string KACalarmID = "";
 
-		DockedVesselInfo vesselInfo;
+		public ELVesselWorkNet workNet
+		{
+			get;
+			private set;
+		}
+
+		public double productivity
+		{
+			get {
+				if (workNet != null) {
+					return workNet.Productivity;
+				}
+				return 0;
+			}
+		}
+
+		public DockedVesselInfo vesselInfo { get; private set; }
 		Transform launchTransform;
-		Part craftRoot;
+		public Part craftRoot { get; private set; }
 		Vessel craftVessel;
 		Vector3 craftOffset;
 
@@ -181,10 +201,42 @@ namespace ExtraplanetaryLaunchpads {
 			paused = false;
 		}
 
-		public bool isActive ()
+		public bool isActive
 		{
-			return ((state == State.Building || state == State.Canceling)
-					&& !paused);
+			get {
+				return ((state == State.Building || state == State.Canceling)
+						&& !paused);
+			}
+		}
+
+		public double CalculateWork ()
+		{
+			if (paused) {
+				return 0;
+			}
+			double hours = 0;
+			var built = builtStuff.required;
+			var cost = buildCost.required;
+			if (state == State.Building) {
+				for (int i = built.Count; i-- > 0; ) {
+					var res = built[i];
+					hours += res.kerbalHours * res.amount;
+				}
+			} else if (state == State.Canceling) {
+				for (int i = built.Count; i-- > 0; ) {
+					var res = built[i];
+					var cres = ELBuildWindow.FindResource (cost, res.name);
+					hours += res.kerbalHours * (cres.amount - res.amount);
+				}
+			}
+			return hours;
+		}
+
+		public void DestroyPad ()
+		{
+			state = State.Idle;
+			builder.part.explosionPotential = 0.1f;
+			builder.part.explode ();
 		}
 
 		private IEnumerator DewarpAndBuildCraft ()
@@ -206,12 +258,12 @@ namespace ExtraplanetaryLaunchpads {
 		void SetPadMass ()
 		{
 			double mass = 0;
-			if (builtStuff != null && buildCost!= null) {
+			if (builtStuff != null && buildCost != null) {
 				var built = builtStuff.required;
 				var cost = buildCost.required;
 
 				foreach (var bres in built) {
-					var cres = ExBuildWindow.FindResource (cost, bres.name);
+					var cres = ELBuildWindow.FindResource (cost, bres.name);
 					mass += (cres.amount - bres.amount) * bres.density;
 				}
 			}
@@ -221,7 +273,6 @@ namespace ExtraplanetaryLaunchpads {
 		private void DoWork_Build (double kerbalHours)
 		{
 			var required = builtStuff.required;
-			var base_kerbalHours = Math.Abs (kerbalHours);
 
 			//Debug.Log (String.Format ("[EL Launchpad] KerbalHours: {0}",
 			//						  kerbalHours));
@@ -244,7 +295,7 @@ namespace ExtraplanetaryLaunchpads {
 						amount = avail;
 					//Debug.Log (String.Format ("[EL Launchpad] work:{0}:{1}:{2}:{3}:{4}",
 					//						  res.name, res.kerbalHours, res.amount, avail, amount));
-					if (amount / base_amount < 1e-10)
+					if (amount <= 0)
 						continue;
 					did_work = true;
 					// do only the work required to process the actual amount
@@ -257,7 +308,7 @@ namespace ExtraplanetaryLaunchpads {
 				}
 				//Debug.Log (String.Format ("[EL Launchpad] work:{0}:{1}:{2}",
 				//						  did_work, kerbalHours, kerbalHours/base_kerbalHours));
-			} while (did_work && kerbalHours / base_kerbalHours > 1e-10);
+			} while (did_work);
 
 			SetPadMass ();
 
@@ -271,14 +322,13 @@ namespace ExtraplanetaryLaunchpads {
 		{
 			var built = builtStuff.required;
 			var cost = buildCost.required;
-			var base_kerbalHours = Math.Abs (kerbalHours);
 
 			bool did_work;
 			int count;
 			do {
 				count = 0;
 				foreach (var bres in built) {
-					var cres = ExBuildWindow.FindResource (cost, bres.name);
+					var cres = ELBuildWindow.FindResource (cost, bres.name);
 					if (cres.amount - bres.amount > 0) {
 						count++;
 					}
@@ -291,9 +341,9 @@ namespace ExtraplanetaryLaunchpads {
 				did_work = false;
 				count = 0;
 				foreach (var bres in built) {
-					var cres = ExBuildWindow.FindResource (cost, bres.name);
+					var cres = ELBuildWindow.FindResource (cost, bres.name);
 					double remaining = cres.amount - bres.amount;
-					if (remaining < 0) {
+					if (remaining <= 0) {
 						continue;
 					}
 					double amount = work / bres.kerbalHours;
@@ -316,11 +366,11 @@ namespace ExtraplanetaryLaunchpads {
 					if (amount > capacity) {
 						amount = capacity;
 					}
-					if (amount / base_amount <= 1e-10)
+					if (amount <= 0)
 						continue;
 					padResources.TransferResource (bres.name, amount);
 				}
-			} while (did_work && kerbalHours / base_kerbalHours > 1e-10);
+			} while (did_work);
 
 			SetPadMass ();
 
@@ -339,15 +389,9 @@ namespace ExtraplanetaryLaunchpads {
 			}
 		}
 
-		[KSPEvent (guiActive=false, active = true)]
-		void ExDiscoverWorkshops (BaseEventData data)
-		{
-			data.Get<List<ExWorkSink>> ("sinks").Add (this);
-		}
-
 		internal void SetupCraftResources (Vessel vsl)
 		{
-			craftResources = new VesselResources (vsl);
+			craftResources = new RMResourceSet (vsl);
 			foreach (var br in buildCost.optional) {
 				var amount = craftResources.ResourceAmount (br.name);
 				craftResources.TransferResource (br.name, -amount);
@@ -411,6 +455,9 @@ namespace ExtraplanetaryLaunchpads {
 			}
 		}
 
+		public delegate void PostCaptureDelegate ();
+		public PostCaptureDelegate PostCapture = () => { };
+
 		private IEnumerator CaptureCraft ()
 		{
 			Vector3 pos;
@@ -439,11 +486,12 @@ namespace ExtraplanetaryLaunchpads {
 
 			CoupleWithCraft ();
 			state = State.Transfer;
+			PostCapture ();
 		}
 
 		Collider[] get_colliders (Part p)
 		{
-			var o = p.transform.FindChild("model");
+			var o = p.transform.Find("model");
 			return o.GetComponentsInChildren<Collider> ();
 		}
 
@@ -476,7 +524,7 @@ namespace ExtraplanetaryLaunchpads {
 					}
 				}
 			}
-			Debug.Log (String.Format ("[EL] GetVesselBox {0} {1}", box.min, box.max));
+			Debug.Log (String.Format ("[EL] GetVesselBox {0} {1}", ship.parts[0].localRoot.transform.position, box));
 			for (int i = 0; i < ship.parts.Count; i++) {
 				Part p = ship[i];
 				p.SendMessage ("OnPutToGround", phq,
@@ -516,10 +564,6 @@ namespace ExtraplanetaryLaunchpads {
 			ShipConstruct nship = new ShipConstruct ();
 			nship.LoadShip (craftConfig);
 
-			int numParts = builder.vessel.parts.Count;
-			if (craftType != CraftType.SubAss)
-				numParts = 0;
-
 			string landedAt = "External Launchpad";
 			string flag = flagname;
 			Game game = FlightDriver.FlightStateCache;
@@ -529,8 +573,8 @@ namespace ExtraplanetaryLaunchpads {
 			launchTransform = builder.PlaceShip (nship, vessel_bounds);
 
 			EnableExtendingLaunchClamps (nship);
-			ShipConstruction.AssembleForLaunch (nship, landedAt, flag, game,
-												crew);
+			ShipConstruction.AssembleForLaunch (nship, landedAt, landedAt,
+												flag, game, crew);
 			var FlightVessels = FlightGlobals.Vessels;
 			craftVessel = FlightVessels[FlightVessels.Count - 1];
 
@@ -543,7 +587,7 @@ namespace ExtraplanetaryLaunchpads {
 				craftVessel.loaded = true;
 				craftVessel.packed = false;
 				craftVessel.GetHeightFromTerrain ();
-				Debug.Log (String.Format ("[EL] hft {0}", craftVessel.heightFromTerrain));
+				Debug.LogFormat ("[EL] hft {0}", craftVessel.heightFromTerrain);
 				craftVessel.loaded = loaded;
 				craftVessel.packed = packed;
 			}
@@ -617,13 +661,6 @@ namespace ExtraplanetaryLaunchpads {
 			}
 		}
 
-		internal static void dumpxform (Transform t, string n = "")
-		{
-			Debug.Log (String.Format ("[EL] xform: {0}", n + t.name));
-			foreach (Transform c in t)
-				dumpxform (c, n + t.name + ".");
-		}
-
 		internal List<Part> CraftParts ()
 		{
 			var part_list = new List<Part> ();
@@ -638,10 +675,10 @@ namespace ExtraplanetaryLaunchpads {
 
 		internal void FindVesselResources ()
 		{
-			padResources = new VesselResources (builder.vessel);
+			padResources = new RMResourceSet (builder.vessel);
 			var craft_parts = CraftParts ();
 			if (craft_parts.Count > 0) {
-				craftResources = new VesselResources ();
+				craftResources = new RMResourceSet ();
 			}
 			foreach (var part in craft_parts) {
 				padResources.RemovePart (part);
@@ -699,13 +736,14 @@ namespace ExtraplanetaryLaunchpads {
 			}
 		}
 
-		public ExBuildControl (IBuilder builder)
+		public ELBuildControl (IBuilder builder)
 		{
 			this.builder = builder;
 		}
 
 		internal void OnStart ()
 		{
+			workNet = builder.vessel.FindVesselModuleImplementing<ELVesselWorkNet> ();
 			GameEvents.onVesselWasModified.Add (onVesselWasModified);
 			GameEvents.onPartDie.Add (onPartDie);
 			if (vesselInfo != null) {
@@ -727,9 +765,7 @@ namespace ExtraplanetaryLaunchpads {
 		void CleaupAfterRelease ()
 		{
 			craftRoot = null;
-			craftConfig = null;
 			vesselInfo = null;
-			buildCost = null;
 			builtStuff = null;
 			state = State.Idle;
 		}
@@ -798,19 +834,23 @@ namespace ExtraplanetaryLaunchpads {
 			}
 			GameObject ro = ship.parts[0].localRoot.gameObject;
 			Vessel craftVessel = ro.AddComponent<Vessel>();
+			craftVessel.vesselName = "EL craftVessel - " + craft.GetValue ("ship");
 			craftVessel.Initialize (true);
-			if (ExSettings.B9Wings_Present) {
+			foreach (Part part in craftVessel.parts) {
+				part.ModulesOnStart ();
+			}
+			if (ELSettings.B9Wings_Present) {
 				if (!InitializeB9Wings (craftVessel)
-					&& ExSettings.FAR_Present) {
+					&& ELSettings.FAR_Present) {
 					InitializeFARSurfaces (craftVessel);
 				}
-			} else if (ExSettings.FAR_Present) {
+			} else if (ELSettings.FAR_Present) {
 				InitializeFARSurfaces (craftVessel);
 			}
 
 			// needed for displaying optional resources during the planning
 			// stage.
-			craftResources = new VesselResources (craftVessel);
+			craftResources = new RMResourceSet (craftVessel);
 
 			BuildCost resources = new BuildCost ();
 
@@ -832,7 +872,7 @@ namespace ExtraplanetaryLaunchpads {
 		void onVesselWasModified (Vessel v)
 		{
 			if (v == builder.vessel) {
-				padResources = new VesselResources (builder.vessel);
+				padResources = new RMResourceSet (builder.vessel);
 				if (craftRoot != null && craftRoot.vessel != builder.vessel) {
 					CleaupAfterRelease ();
 				}

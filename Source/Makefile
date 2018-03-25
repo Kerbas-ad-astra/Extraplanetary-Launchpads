@@ -7,14 +7,18 @@ export PLUGINDIR	:= ${ELGAMEDATA}/Plugins
 TARGETS		:= bin/Launchpad.dll
 
 EL_FILES := \
+	CommandSeat/ControlReference.cs		\
+	CommandSeat/NoControlSwitch.cs		\
 	Converter/Converter.cs				\
 	Converter/Extractor.cs				\
 	Converter/IResourceProvider.cs		\
 	Converter/KethaneResourceProvider.cs\
 	Converter/StockResourceProvider.cs	\
+	DisposablePad/DisposablePad.cs		\
 	Recipes/BuildCost.cs				\
 	Recipes/BuildResource.cs			\
 	Recipes/BuildResourceSet.cs			\
+	Recipes/ConverterRecipe.cs			\
 	Recipes/CostReport.cs				\
 	Recipes/Ingredient.cs				\
 	Recipes/PartRecipe.cs				\
@@ -22,10 +26,15 @@ EL_FILES := \
 	Recipes/RecipeResourceContainer.cs	\
 	Recipes/RecipeDatabase.cs			\
 	Recipes/RecipeLoader.cs				\
-	Resources/IResourceContainer.cs		\
-	Resources/KISResourceContainer.cs	\
-	Resources/PartResourceContainer.cs	\
-	Resources/Resources.cs				\
+	ResourceManager/IResourceContainer.cs		\
+	ResourceManager/KISResourceContainer.cs		\
+	ResourceManager/PartResourceContainer.cs	\
+	ResourceManager/ResourceInfo.cs				\
+	ResourceManager/ResourceManager.cs			\
+	ResourceManager/ResourceSet.cs				\
+	ResourceManager/ResourceSetContainer.cs		\
+	Survey/Billboard.cs					\
+	Survey/Points.cs					\
 	Survey/SiteBody.cs					\
 	Survey/SiteList.cs					\
 	Survey/SurveySite.cs				\
@@ -33,21 +42,28 @@ EL_FILES := \
 	Survey/SurveyStake.cs				\
 	Survey/SurveyStation.cs				\
 	Survey/SurveyTracker.cs				\
+	Survey/VirtualPad.cs				\
     assembly/AssemblyInfo.cs			\
 	assembly/Checkers.cs				\
 	assembly/VersionReport.cs			\
 	GUI/BuildWindow.cs					\
+	GUI/CraftBrowser.cs					\
 	GUI/DropDownList.cs					\
 	GUI/EditorToolbar.cs				\
-	GUI/RenameWindow.cs					\
-	GUI/ShipInfo.cs						\
 	GUI/ProgressBar.cs					\
+	GUI/RenameWindow.cs					\
+	GUI/ResourceWindow.cs				\
+	GUI/ScrollView.cs					\
+	GUI/ShipInfo.cs						\
+	GUI/Styles.cs						\
+	GUI/TextField.cs					\
 	LaunchClamp/LaunchClamp.cs			\
 	Pad/Launchpad.cs					\
 	Recycler/Recycler.cs				\
 	Recycler/StateMachine.cs			\
 	Target/Target.cs					\
 	Workshop/ConstructionSkill.cs		\
+	Workshop/VesselWorkNet.cs			\
 	Workshop/Workshop.cs				\
 	lib/KISWrapper.cs					\
 	lib/KACWrapper.cs					\
@@ -57,8 +73,8 @@ EL_FILES := \
 	toolbar/ToolbarWrapper.cs			\
 	AirstreamShield.cs					\
 	BuildControl.cs						\
+	ControlInterface.cs					\
 	Settings.cs							\
-	VersionReport.cs					\
 	$e
 
 RESGEN2		:= resgen2

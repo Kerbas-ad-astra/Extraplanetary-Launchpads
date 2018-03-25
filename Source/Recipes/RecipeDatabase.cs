@@ -24,8 +24,9 @@ using KSP.IO;
 
 namespace ExtraplanetaryLaunchpads {
 	[KSPAddon (KSPAddon.Startup.Instantly, false)]
-	public class ExRecipeDatabase: MonoBehaviour
+	public class ELRecipeDatabase: MonoBehaviour
 	{
+		public static Dictionary<string, ConverterRecipe> converter_recipes;
 		public static Dictionary<string, PartRecipe> part_recipes;
 		public static Dictionary<string, Recipe> module_recipes;
 		public static Dictionary<string, Recipe> resource_recipes;
@@ -38,6 +39,14 @@ namespace ExtraplanetaryLaunchpads {
 			PartResourceDefinition res_def;
 			res_def = PartResourceLibrary.Instance.GetDefinition (name);
 			return res_def.density;
+		}
+
+		public static ConverterRecipe ConverterRecipe (string name)
+		{
+			if (converter_recipes.ContainsKey (name)) {
+				return converter_recipes[name];
+			}
+			return null;
 		}
 
 		public static Recipe ResourceRecipe (string name)
@@ -84,7 +93,7 @@ namespace ExtraplanetaryLaunchpads {
 			return pname;
 		}
 
-		public static void ProcessPart (Part part, Dictionary<string, ResourceInfo> resources)
+		public static void ProcessPart (Part part, Dictionary<string, RMResourceInfo> resources)
 		{
 			string name = GetPartName (part);
 			if (name.Contains ("kerbalEVA")) {
@@ -93,7 +102,7 @@ namespace ExtraplanetaryLaunchpads {
 				name = "kerbalEVA";
 			}
 			if (!part_recipes.ContainsKey (name)) {
-				print ("ExRecipeDatabase.ProcessPart: no part recipe for " + name);
+				print ("ELRecipeDatabase.ProcessPart: no part recipe for " + name);
 				return;
 			}
 			var recipe = part_recipes[name].Bake (part.mass);
@@ -105,9 +114,9 @@ namespace ExtraplanetaryLaunchpads {
 				}
 				ingredient.ratio /= ResourceDensity (ingredient.name);
 
-				ResourceInfo resourceInfo;
+				RMResourceInfo resourceInfo;
 				if (!resources.ContainsKey (ingredient.name)) {
-					resourceInfo = new ResourceInfo ();
+					resourceInfo = new RMResourceInfo ();
 					resources[ingredient.name] = resourceInfo;
 				}
 				resourceInfo = resources[ingredient.name];
@@ -117,6 +126,7 @@ namespace ExtraplanetaryLaunchpads {
 
 		void Awake ()
 		{
+			converter_recipes = new Dictionary<string, ConverterRecipe> ();
 			part_recipes = new Dictionary<string, PartRecipe> ();
 			module_recipes = new Dictionary<string, Recipe> ();
 			resource_recipes = new Dictionary<string, Recipe> ();
@@ -127,15 +137,15 @@ namespace ExtraplanetaryLaunchpads {
 			List<LoadingSystem> list = LoadingScreen.Instance.loaders;
 			if (list != null) {
 				for (int i = 0; i < list.Count; i++) {
-					if (list[i] is ExRecipeLoader) {
-						//print("[EL Recipes] found ExRecipeLoader: " + i);
-						(list[i] as ExRecipeLoader).done = false;
+					if (list[i] is ELRecipeLoader) {
+						//print("[EL Recipes] found ELRecipeLoader: " + i);
+						(list[i] as ELRecipeLoader).done = false;
 						break;
 					}
 					if (list[i] is PartLoader) {
 						//print("[EL Recipes] found PartLoader: " + i);
 						GameObject go = new GameObject();
-						ExRecipeLoader scanner = go.AddComponent<ExRecipeLoader>();
+						ELRecipeLoader scanner = go.AddComponent<ELRecipeLoader>();
 						list.Insert (i, scanner);
 						break;
 					}

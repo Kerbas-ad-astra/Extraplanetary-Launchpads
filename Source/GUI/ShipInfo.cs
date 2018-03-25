@@ -21,17 +21,20 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
+using KSP.UI.Screens;
+
 namespace ExtraplanetaryLaunchpads {
 	[KSPAddon (KSPAddon.Startup.EditorAny, false)]
-	public class ExShipInfo : MonoBehaviour
+	public class ELShipInfo : MonoBehaviour
 	{
 		static Rect winpos;
-		static bool showGUI = true;
+		public static bool showGUI = false;
 
 		int parts_count;
 		public BuildCost buildCost;
 		CostReport cashed_cost;
-		Vector2 scrollPosR, scrollPosO;
+		ScrollView reqScroll = new ScrollView (100);
+		ScrollView optScroll = new ScrollView (100);
 
 		public static void ToggleGUI ()
 		{
@@ -78,11 +81,13 @@ namespace ExtraplanetaryLaunchpads {
 
 		int rebuild_list_wait_frames = 0;
 
-		private IEnumerator WaitAndRebuildList (ShipConstruct ship)
+		private IEnumerator WaitAndRebuildList ()
 		{
 			while (--rebuild_list_wait_frames > 0) {
 				yield return null;
 			}
+			ShipConstruct ship = EditorLogic.fetch.ship;
+			Debug.LogFormat ("ELShipInfo.WaitAndRebuildList: {0}", ship);
 
 			buildCost = null;
 			cashed_cost = null;
@@ -107,16 +112,21 @@ namespace ExtraplanetaryLaunchpads {
 			cashed_cost = buildCost.cost;
 		}
 
-		public void RebuildList(ShipConstruct ship)
+		public void RebuildList()
 		{
 			// some parts/modules fire the event before doing things
 			const int wait_frames = 2;
 			if (rebuild_list_wait_frames < wait_frames) {
 				rebuild_list_wait_frames += wait_frames;
 				if (rebuild_list_wait_frames == wait_frames) {
-					StartCoroutine (WaitAndRebuildList (ship));
+					StartCoroutine (WaitAndRebuildList ());
 				}
 			}
+		}
+
+		void onEditorShipModified (ShipConstruct ship)
+		{
+			RebuildList ();
 		}
 
 		void onEditorRestart ()
@@ -126,16 +136,24 @@ namespace ExtraplanetaryLaunchpads {
 			parts_count = 0;
 		}
 
+		private void onEditorLoad (ShipConstruct ship, CraftBrowserDialog.LoadType loadType)
+		{
+			Debug.LogFormat ("ELShipInfo.onEditorLoad: {0} {1}", ship, loadType);
+			RebuildList ();
+		}
+
 		void Awake ()
 		{
-			GameEvents.onEditorShipModified.Add (RebuildList);
+			GameEvents.onEditorShipModified.Add (onEditorShipModified);
 			GameEvents.onEditorRestart.Add (onEditorRestart);
+			GameEvents.onEditorLoad.Add (onEditorLoad);
 		}
 
 		void OnDestroy ()
 		{
-			GameEvents.onEditorShipModified.Remove (RebuildList);
+			GameEvents.onEditorShipModified.Remove (onEditorShipModified);
 			GameEvents.onEditorRestart.Remove (onEditorRestart);
+			GameEvents.onEditorLoad.Remove (onEditorLoad);
 		}
 
 		void OnGUI ()
@@ -177,13 +195,13 @@ namespace ExtraplanetaryLaunchpads {
 			GUILayout.EndHorizontal();
 		}
 
-		private Vector2 ResourcePanel (string title,
-									   List<BuildResource> resources,
-									   Vector2 scrollPos)
+		private void ResourcePanel (string title,
+									List<BuildResource> resources,
+									ScrollView scroll)
 		{
 			GUILayout.Label (title + ":");
 			GUILayout.BeginVertical (GUILayout.Height (100));
-			scrollPos = GUILayout.BeginScrollView (scrollPos);
+			scroll.Begin ();
 			foreach (var res in resources) {
 				GUILayout.BeginHorizontal ();
 				GUILayout.Label (String.Format ("{0}:", res.name));
@@ -191,13 +209,14 @@ namespace ExtraplanetaryLaunchpads {
 				GUILayout.Label (String.Format ("{0} ({1})", res.amount.ToStringSI(4, unit:"u"), EL_Utils.FormatMass(res.mass, 4)));
 				GUILayout.EndHorizontal ();
 			}
-			GUILayout.EndScrollView ();
+			scroll.End ();
 			GUILayout.EndVertical ();
-			return scrollPos;
 		}
 
 		void InfoWindow (int windowID)
 		{
+			ELStyles.Init ();
+
 			var cost = cashed_cost;
 			double required_mass = 0;
 			double resource_mass = 0;
@@ -222,10 +241,10 @@ namespace ExtraplanetaryLaunchpads {
 
 			cost.optional.Sort ();
 			GUILayout.Label (" ");
-			scrollPosR = ResourcePanel ("Required", cost.required, scrollPosR);
-			scrollPosO = ResourcePanel ("Optional", cost.optional, scrollPosO);
+			ResourcePanel ("Required", cost.required, reqScroll);
+			ResourcePanel ("Optional", cost.optional, optScroll);
 
-			string ver = ExtraplanetaryLaunchpadsVersionReport.GetVersion ();
+			string ver = ELVersionReport.GetVersion ();
 			GUILayout.Label(ver);
 			GUILayout.EndVertical ();
 			GUI.DragWindow ();

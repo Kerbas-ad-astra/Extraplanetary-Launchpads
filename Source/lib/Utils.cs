@@ -16,6 +16,7 @@ along with Extraplanetary Launchpads.  If not, see
 <http://www.gnu.org/licenses/>.
 */
 using System;
+using System.Text;
 using System.Reflection;
 using System.Collections;
 using System.Collections.Generic;
@@ -28,6 +29,22 @@ using Experience;
 namespace ExtraplanetaryLaunchpads {
 
 	public static class EL_Utils {
+		public static T FindVesselModuleImplementing<T> (this Vessel vessel) where T : class
+		{
+			for (int i = vessel.vesselModules.Count; i-- > 0; ) {
+				VesselModule vm = vessel.vesselModules[i];
+				if (vm is T) {
+					return vm as T;
+				}
+			}
+			return null;
+		}
+
+		public static Vector3d LocalUp (this CelestialBody body, Vector3d pos)
+		{
+			return (pos - body.position).normalized;
+		}
+
 		public static string ToStringSI(this double value, int sigFigs = 3, string unit = null)
 		{
 			if (unit == null) {
@@ -106,6 +123,62 @@ namespace ExtraplanetaryLaunchpads {
 			evt.externalToEVAOnly = true;
 			evt.guiActiveUnfocused = true;
 			evt.unfocusedRange = EVARange;
+		}
+
+		public static void dumpxform (Transform t, bool comps, string n = "")
+		{
+			Debug.LogFormat ("[EL] xform: {0}", n + t.name);
+			if (comps) {
+				foreach (var c in t.GetComponents<MonoBehaviour>()) {
+					Debug.LogFormat("  {0}", c);
+				}
+			}
+			foreach (Transform c in t)
+				dumpxform (c, comps, n + t.name + "/");
+		}
+
+		public static void PrintResource (StringBuilder sb, ResourceRatio ratio, string unit)
+		{
+			var def = PartResourceLibrary.Instance.GetDefinition (ratio.ResourceName);
+			sb.Append ("\n - ");
+			sb.Append (ratio.ResourceName);
+			string period;
+			double rate;
+			if (def.density > 0) {
+				rate = ratio.Ratio * def.density;
+			} else {
+				rate = ratio.Ratio;
+				unit = "u";
+			}
+			if (rate < 0.1 / KSPUtil.dateTimeFormatter.Hour) {
+				rate *= KSPUtil.dateTimeFormatter.Day;
+				period = "day";
+			} else if (rate < 0.1 / KSPUtil.dateTimeFormatter.Minute) {
+				rate *= KSPUtil.dateTimeFormatter.Hour;
+				period = "hr";
+			} else if (rate < 0.1) {
+				rate *= KSPUtil.dateTimeFormatter.Minute;
+				period = "m";
+			} else {
+				period = "s";
+			}
+			sb.AppendFormat (" {0:0.00} {1}/{2}", rate, unit, period);
+		}
+
+		public static bool PrintIngredient (StringBuilder sb, Ingredient ingredient, string unit)
+		{
+			string name = ingredient.name;
+			double ratio = ingredient.ratio;
+			ResourceRatio Ratio = new ResourceRatio (name, ratio, false);
+			var def = PartResourceLibrary.Instance.GetDefinition (name);
+			if (def != null) {
+				if (def.density > 0) {
+					Ratio.Ratio /= def.density;
+				}
+				PrintResource (sb, Ratio, unit);
+				return true;
+			}
+			return false;
 		}
 	}
 }

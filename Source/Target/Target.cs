@@ -24,7 +24,7 @@ using KSP.IO;
 
 namespace ExtraplanetaryLaunchpads {
 
-	public class ExTarget : PartModule, IModuleInfo, ITargetable
+	public class ELTarget : PartModule, IModuleInfo, ITargetable
 	{
 		[KSPField]
 		public string TargetName = "Target";
@@ -92,6 +92,10 @@ namespace ExtraplanetaryLaunchpads {
 		public bool GetActiveTargetable()
 		{
 			return false;
+		}
+		public string GetDisplayName()
+		{
+			return TargetName;
 		}
 
 		public override void OnLoad (ConfigNode node)

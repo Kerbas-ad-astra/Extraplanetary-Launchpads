@@ -19,15 +19,49 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
 
 using KSP.IO;
 using Highlighting;
 
 namespace ExtraplanetaryLaunchpads {
 
-	public class ExSurveyStake : PartModule, IModuleInfo
+	public class ELSurveyStake : PartModule, IModuleInfo
 	{
+		public struct Data
+		{
+			public bool bound;
+			public int use;
+			public Vessel vessel;
+			public ELSurveyStake stake;
+		}
+
+		public static Data GetData (ProtoPartModuleSnapshot stake, Vessel vessel)
+		{
+			Data data = new Data ();
+			ConfigNode node = stake.moduleValues;
+			bool.TryParse (node.GetValue ("bound"), out data.bound);
+			int.TryParse (node.GetValue ("use"), out data.use);
+			data.vessel = vessel;
+			data.stake = null;	// part not loaded
+			return data;
+		}
+
+		public Data GetData ()
+		{
+			Data data = new Data ();
+			data.bound = bound;
+			data.use = use;
+			data.vessel = vessel;
+			data.stake = this;
+			return data;
+		}
+
 		internal static string[] StakeUses = { "Origin",
+											   "+X", "+Y", "+Z",
+											   "-X", "-Y", "-Z"};
+		internal static string[] StakeUses_short = { " O",
 											   "+X", "+Y", "+Z",
 											   "-X", "-Y", "-Z"};
 		[KSPField (isPersistant = true)]
@@ -45,6 +79,14 @@ namespace ExtraplanetaryLaunchpads {
 			XKCDColors.DeepSkyBlue,
 		};
 		Highlighter highlighter;
+
+		const float PlaqueAlpha = 0.75f;
+
+		GameObject plaque;
+		CanvasRenderer plaqueBackgroundRenderer;
+		CanvasRenderer plaqueTextRenderer;
+		Text plaqueText;
+		//TextMeshPro plaqueText;
 
 		internal string Name
 		{
@@ -81,32 +123,48 @@ namespace ExtraplanetaryLaunchpads {
 		{
 			Events["NextUse"].guiName = StakeUses[use];
 			Events["ToggleBound"].guiName = bound ? "Bound" : "Direction";
+			if (HighLogic.LoadedSceneIsFlight) {
+				CreatePlaque ();
+				UpdatePlaque ();
+			}
+			GameEvents.onPartDie.Add(OnPartDie);
 		}
 
-		public void OnPartDie ()
+		void OnDestroy ()
 		{
-			ExSurveyTracker.instance.RemoveStake (vessel);
+			GameEvents.onPartDie.Remove(OnPartDie);
 		}
 
-		public void FixedUpdate ()
+		public void OnPartDie (Part p)
 		{
+			if (p == part) {
+				ELSurveyTracker.instance.RemoveStake (vessel);
+			}
 		}
 
-		[KSPEvent(active = true, guiActiveUnfocused = true, externalToEVAOnly = false, guiActive = false, unfocusedRange = 200f, guiName = "")]
+		[KSPEvent(active = true, guiActiveUnfocused = true,
+				  externalToEVAOnly = false, guiActive = false,
+				  unfocusedRange = 200f, guiName = "")]
 		public void NextUse()
 		{
 			use = (use + 1) % StakeUses.Count();
 			Events["NextUse"].guiName = StakeUses[use];
+			UpdatePlaque ();
 		}
 
-		[KSPEvent(active = true, guiActiveUnfocused = true, externalToEVAOnly = false, guiActive = false, unfocusedRange = 200f, guiName = "")]
+		[KSPEvent(active = true, guiActiveUnfocused = true,
+				  externalToEVAOnly = false, guiActive = false,
+				  unfocusedRange = 200f, guiName = "")]
 		public void ToggleBound()
 		{
 			bound = !bound;
 			Events["ToggleBound"].guiName = bound ? "Bound" : "Direction";
+			UpdatePlaque ();
 		}
 
-		[KSPEvent (active = true, guiActiveUnfocused = true, externalToEVAOnly = false, guiActive = false, unfocusedRange = 200f, guiName = "Rename Stake")]
+		[KSPEvent (active = true, guiActiveUnfocused = true,
+				   externalToEVAOnly = false, guiActive = false,
+				   unfocusedRange = 200f, guiName = "Rename Stake")]
 		public void RenameVessel ()
 		{
 			vessel.RenameVessel ();
@@ -114,6 +172,8 @@ namespace ExtraplanetaryLaunchpads {
 
 		public void Highlight (bool on)
 		{
+			plaque.SetActive (on);
+
 			if (on) {
 				var color = StakeColors[use];
 				var model = part.FindModelTransform("model");
@@ -132,12 +192,99 @@ namespace ExtraplanetaryLaunchpads {
 				}
 				part.SetHighlightColor (color);
 				part.SetHighlight (true, false);
+
+				UpdatePlaque ();
 			} else {
 				if (highlighter != null) {
 					part.SetHighlightDefault ();
 					highlighter.Off ();
 				}
 			}
+		}
+
+		void UpdatePlaque ()
+		{
+			var color = StakeColors[use];
+			plaqueBackgroundRenderer.SetColor (color);
+			plaqueTextRenderer.SetColor (color);
+			plaqueText.text = (bound ? "B" : "D") + StakeUses_short[use];
+		}
+
+		void CreateBackground (RectTransform parent)
+		{
+			GameObject go = new GameObject ("Survey Plaque Bacground",
+											typeof (RectTransform));
+			plaqueBackgroundRenderer = go.AddComponent<CanvasRenderer> ();
+			plaqueBackgroundRenderer.SetAlpha (PlaqueAlpha);
+
+			go.layer = LayerMask.NameToLayer("Ignore Raycast");
+			RectTransform rxform = go.transform as RectTransform;
+			rxform.SetParent (parent, false);
+			rxform.anchorMin = new Vector2 (0, 0);
+			rxform.anchorMax = new Vector2 (1, 1);
+			rxform.SetSizeWithCurrentAnchors (RectTransform.Axis.Horizontal, 80);
+			rxform.SetSizeWithCurrentAnchors (RectTransform.Axis.Vertical, 50);
+
+			Image bg = go.AddComponent<Image> ();
+			Texture2D tex = GameDatabase.Instance.GetTexture("ExtraplanetaryLaunchpads/Textures/plaque", false);
+			bg.sprite = Sprite.Create (tex, new Rect(0.0f, 0.0f, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100.0f, 0, SpriteMeshType.FullRect, new Vector4 (17, 17, 17, 17));
+			bg.type = Image.Type.Sliced;
+		}
+
+		void CreateText (RectTransform parent)
+		{
+			GameObject go = new GameObject ("Survey Plaque Text",
+											typeof (RectTransform));
+			plaqueTextRenderer = go.AddComponent<CanvasRenderer> ();
+			plaqueTextRenderer.SetAlpha (PlaqueAlpha);
+
+			go.layer = LayerMask.NameToLayer("Ignore Raycast");
+			RectTransform rxform = go.transform as RectTransform;
+			rxform.SetParent (parent, false);
+			rxform.anchorMin = new Vector2 (0, 0);
+			rxform.anchorMax = new Vector2 (1, 1);
+
+			plaqueText = go.AddComponent<Text> ();
+			plaqueText.alignment = TextAnchor.MiddleCenter;
+			Font ArialFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
+			plaqueText.font = ArialFont;
+			plaqueText.material = ArialFont.material;
+			plaqueText.fontSize = 35;
+
+			//plaqueText = go.AddComponent<TextMeshPro> ();
+			//plaqueText.alignment = TextAlignmentOptions.Center;
+			//plaqueText.font = UISkinManager.TMPFont;
+			//plaqueText.outlineWidth = 0.15f;
+		}
+
+		void CreatePlaque ()
+		{
+			plaque = new GameObject ("Survey Plaque");
+			plaque.transform.SetParent (transform, false);
+
+			EL_Billboard billboard = plaque.AddComponent<EL_Billboard>();
+			billboard.LocalUp = LocalUp;
+
+			plaque.SetActive (false);
+
+			GameObject go = new GameObject ("Survey Plaque Canvas",
+											typeof (RectTransform),
+											typeof (Canvas),
+											typeof (CanvasScaler));
+			RectTransform rxform = go.transform as RectTransform;
+			rxform.SetParent (plaque.transform, false);
+			rxform.localPosition = new Vector3 (0, 0.5f, 0);
+			rxform.localScale = new Vector3 (0.01f, 0.01f, 0.01f);
+			rxform.SetSizeWithCurrentAnchors (RectTransform.Axis.Horizontal, 80);
+			rxform.SetSizeWithCurrentAnchors (RectTransform.Axis.Vertical, 50);
+
+			CreateBackground (rxform);
+			CreateText (rxform);
+		}
+
+		Vector3 LocalUp ()
+		{
+			return vessel.mainBody.LocalUp (transform.position);
 		}
 	}
 }

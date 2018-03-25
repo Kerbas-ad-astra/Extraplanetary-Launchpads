@@ -61,12 +61,12 @@ namespace ExtraplanetaryLaunchpads {
 							var s = sites[j];
 							sites[i].Merge (sites[j]);
 							sites.RemoveAt (j);
-							ExSurveyTracker.onSiteRemoved.Fire (s);
+							ELSurveyTracker.onSiteRemoved.Fire (s);
 							continue;
 						}
 						j++;
 					}
-					ExSurveyTracker.onSiteModified.Fire (sites[i]);
+					ELSurveyTracker.onSiteModified.Fire (sites[i]);
 					return sites[i];
 				}
 			}
@@ -81,6 +81,16 @@ namespace ExtraplanetaryLaunchpads {
 					sites.RemoveAt (i);
 				}
 			}
+		}
+
+		internal SurveySite FindSite (Vessel stake)
+		{
+			foreach (var site in sites) {
+				if (site.Contains (stake)) {
+					return site;
+				}
+			}
+			return null;
 		}
 
 		internal void RemoveStake (Vessel stake)

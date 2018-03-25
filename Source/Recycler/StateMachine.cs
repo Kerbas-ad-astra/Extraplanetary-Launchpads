@@ -57,11 +57,11 @@ namespace ExtraplanetaryLaunchpads {
 		KFSMEvent event_parts_exhausted;
 
 		bool recycler_active;
-		ExRecycler recycler;
+		ELRecycler recycler;
 		Collider RecycleField;
-		VesselResources recycler_resources;
+		RMResourceSet recycler_resources;
 		Part active_part;
-		ExWorkshop master;
+		ELVesselWorkNet workNet;
 		HashSet<uint> recycle_parts;
 		List<BuildResource> part_resources;
 		int res_index;
@@ -164,7 +164,7 @@ namespace ExtraplanetaryLaunchpads {
 			Debug.Log (String.Format ("[EL RSM] event: {0}", name));
 		}
 
-		public RecyclerFSM (ExRecycler recycler)
+		public RecyclerFSM (ELRecycler recycler)
 		{
 			this.recycler = recycler;
 
@@ -252,9 +252,10 @@ namespace ExtraplanetaryLaunchpads {
 
 		public void Start (Collider field)
 		{
+			workNet = recycler.vessel.FindVesselModuleImplementing<ELVesselWorkNet> ();
 			RecycleField = field;
 			GameEvents.onVesselWasModified.Add (onVesselWasModified);
-			recycler_resources = new VesselResources (recycler.vessel, recycle_parts);
+			recycler_resources = new RMResourceSet (recycler.vessel, recycle_parts);
 			fsm.StartFSM (start_state);
 		}
 
@@ -314,15 +315,10 @@ namespace ExtraplanetaryLaunchpads {
 			fsm.FixedUpdateFSM ();
 		}
 
-		public void SetMaster (ExWorkshop master)
-		{
-			this.master = master;
-		}
-
 		void onVesselWasModified (Vessel v)
 		{
 			if (v == recycler.vessel) {
-				recycler_resources = new VesselResources (recycler.vessel, recycle_parts);
+				recycler_resources = new RMResourceSet (recycler.vessel, recycle_parts);
 			}
 		}
 
@@ -343,6 +339,14 @@ namespace ExtraplanetaryLaunchpads {
 					return fsm.CurrentState.name;
 				}
 				return "FSM not started";
+			}
+		}
+
+		public bool isBusy
+		{
+			get {
+				return (fsm.CurrentState != state_off
+						&& fsm.CurrentState != state_idle);
 			}
 		}
 
@@ -395,9 +399,9 @@ namespace ExtraplanetaryLaunchpads {
 			if (count < 1) {
 				return null;
 			}
-			float prod = 0;
-			if (master != null) {
-				prod = ExWorkshop.HyperCurve (master.vessel_productivity);
+			double prod = 0;
+			if (workNet != null) {
+				prod = ELWorkshop.HyperCurve (workNet.Productivity);
 			}
 			Part p;
 			do {
@@ -426,10 +430,10 @@ namespace ExtraplanetaryLaunchpads {
 			// coming from the part body itself), then a transfer recipe will
 			// override a recycle recipe
 			if (xfer) {
-				recipe = ExRecipeDatabase.TransferRecipe (res);
+				recipe = ELRecipeDatabase.TransferRecipe (res);
 			}
 			if (recipe == null) {
-				recipe = ExRecipeDatabase.RecycleRecipe (res);
+				recipe = ELRecipeDatabase.RecycleRecipe (res);
 			}
 
 			if (recipe != null) {
@@ -441,7 +445,7 @@ namespace ExtraplanetaryLaunchpads {
 					}
 				}
 			} else {
-				if (ExRecipeDatabase.ResourceRecipe (res) != null) {
+				if (ELRecipeDatabase.ResourceRecipe (res) != null) {
 				} else {
 					if (ingredient.isReal) {
 						var br = new BuildResource (ingredient);
@@ -451,10 +455,10 @@ namespace ExtraplanetaryLaunchpads {
 			}
 		}
 
-		void ProcessResource (VesselResources vr, string res, BuildResourceSet rd, bool xfer)
+		void ProcessResource (RMResourceSet vr, string res, BuildResourceSet rd, bool xfer)
 		{
 			var amount = vr.ResourceAmount (res);
-			var mass = amount * ExRecipeDatabase.ResourceDensity (res);
+			var mass = amount * ELRecipeDatabase.ResourceDensity (res);
 
 			ProcessIngredient (new Ingredient (res, mass), rd, xfer);
 		}
@@ -464,7 +468,7 @@ namespace ExtraplanetaryLaunchpads {
 			string message = crew.name + " was mulched";
 			ScreenMessages.PostScreenMessage (message, 30.0f, ScreenMessageStyle.UPPER_CENTER);
 
-			var part_recipe = ExRecipeDatabase.KerbalRecipe ();
+			var part_recipe = ELRecipeDatabase.KerbalRecipe ();
 			if (part_recipe == null) {
 				return;
 			}
@@ -485,7 +489,7 @@ namespace ExtraplanetaryLaunchpads {
 			bc.addPart (p);
 			var rd = new BuildResourceSet ();
 			bool xfer = true;
-			VesselResources.ResourceProcessor process = delegate (VesselResources vr, string res) {
+			RMResourceProcessor process = delegate (RMResourceSet vr, string res) {
 				ProcessResource (vr, res, rd, xfer);
 			};
 			bc.resources.Process (process);
