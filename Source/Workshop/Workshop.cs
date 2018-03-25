@@ -28,16 +28,27 @@ namespace ExtraplanetaryLaunchpads {
 
 using KerbalStats;
 
-public interface ExWorkSink
+public interface ELWorkSink
 {
 	void DoWork (double kerbalHours);
-	bool isActive ();
+	bool isActive { get; }
+	double CalculateWork ();
 }
 
-public class ExWorkshop : PartModule, IModuleInfo
+public interface ELWorkSource
+{
+	void UpdateProductivity ();
+	double Productivity { get; }
+	bool isActive { get; }
+}
+
+public class ELWorkshop : PartModule, IModuleInfo, ELWorkSource
 {
 	[KSPField]
 	public float ProductivityFactor = 1.0f;
+
+	[KSPField]
+	public float UnmannedProductivity = 0;
 
 	[KSPField]
 	public bool FullyEquipped = false;
@@ -46,12 +57,15 @@ public class ExWorkshop : PartModule, IModuleInfo
 	public bool IgnoreCrewCapacity = true;
 
 	[KSPField (guiName = "Productivity", guiActive = true)]
-	public float Productivity;
+	double _Productivity;
+	public double Productivity
+	{
+		get { return _Productivity; }
+		private set { _Productivity = value; }
+	}
 
 	[KSPField (guiName = "Vessel Productivity", guiActive = true)]
-	public float VesselProductivity;
-
-	public double lastUpdate = 0.0;
+	public double VesselProductivity;
 
 	public bool SupportInexperienced
 	{
@@ -59,19 +73,10 @@ public class ExWorkshop : PartModule, IModuleInfo
 			return FullyEquipped || ProductivityFactor >= 1;
 		}
 	}
-	private bool workshop_started;
-	private ExWorkshop master;
-	private List<ExWorkshop> sources;
-	private List<ExWorkSink> sinks;
-	private bool functional;
-	public float vessel_productivity
-	{
-		get;
-		private set;
-	}
+	public bool isActive { get; private set; }
+	private ELVesselWorkNet workNet;
 	private bool enableSkilled;
 	private bool enableUnskilled;
-	private bool useSkill;
 
 	public override string GetInfo ()
 	{
@@ -93,103 +98,37 @@ public class ExWorkshop : PartModule, IModuleInfo
 		return null;
 	}
 
-	private static ExWorkshop findFirstWorkshop (Part part)
+	private double Normal (float stupidity, float courage, float experience)
 	{
-		var shop = part.Modules.OfType<ExWorkshop> ().FirstOrDefault ();
-		if (shop != null && shop.functional) {
-			return shop;
-		}
-		foreach (Part p in part.children) {
-			shop = findFirstWorkshop (p);
-			if (shop != null) {
-				return shop;
-			}
-		}
-		return null;
+		double s = stupidity;
+		double c = courage;
+		double e = experience;
+
+		double w = e / 3.6e5 * (1-0.8*s);
+
+		return 1 - s * (1 + c * c) + (0.5+s)*(1-Math.Exp(-w));
 	}
 
-	private void DiscoverWorkshops ()
+	private double Baddass (float stupidity, float courage, float experience)
 	{
-		ExWorkshop shop = findFirstWorkshop (vessel.rootPart);
-		if (shop == this) {
-			//Debug.Log (String.Format ("[EL Workshop] master"));
-			var data = new BaseEventData (BaseEventData.Sender.USER);
-			data.Set<ExWorkshop> ("master", this);
-			sources = new List<ExWorkshop> ();
-			sinks = new List<ExWorkSink> ();
-			data.Set<List<ExWorkshop>> ("sources", sources);
-			data.Set<List<ExWorkSink>> ("sinks", sinks);
-			vessel.rootPart.SendEvent ("ExDiscoverWorkshops", data);
-		} else {
-			sources = null;
-			sinks = null;
-		}
+		double s = stupidity;
+		double c = courage;
+		double e = experience;
+
+		double a = -2;
+		double v = 2 * (1 - s);
+		double y = 1 - 2 * s;
+		double w = e / 3.6e5 * (1-0.8*s);
+
+		return y + (v + a * c / 2) * c + (1+2*s)*(1-Math.Exp(-w));
 	}
 
-	private IEnumerator UpdateNetwork ()
+	public static double HyperCurve (double x)
 	{
-		yield return null;
-		DiscoverWorkshops ();
+		return (Math.Sqrt (x * x + 1) + x) / 2;
 	}
 
-	private void onVesselWasModified (Vessel v)
-	{
-		if (v == vessel) {
-			StartCoroutine (UpdateNetwork ());
-		}
-	}
-
-	private double GetProductivity (double timeDelta)
-	{
-		double prod = Productivity * timeDelta / 3600.0;
-		//Debug.log ("GetProductivity: lastupdate = " + lastUpdate.ToString ("F3") + ", currentTime = " + currentTime.ToString ("F3") + ", --> " + prod.ToString ());
-		return prod;
-	}
-
-	[KSPEvent (guiActive=false, active = true)]
-	void ExDiscoverWorkshops (BaseEventData data)
-	{
-		if (!functional) {
-			return;
-		}
-		// Even the master workshop is its own slave.
-		//Debug.Log (String.Format ("[EL Workshop] slave"));
-		master = data.Get<ExWorkshop> ("master");
-		data.Get<List<ExWorkshop>> ("sources").Add (this);
-	}
-
-	private float Normal (float stupidity, float courage, float experience)
-	{
-		float s = stupidity;
-		float c = courage;
-		float e = experience;
-
-		float w = e / 3.6e5f * (1-0.8f*s);
-
-		return 1 - s * (1 + c * c) + (0.5f+s)*(1-Mathf.Exp(-w));
-	}
-
-	private float Baddass (float stupidity, float courage, float experience)
-	{
-		float s = stupidity;
-		float c = courage;
-		float e = experience;
-
-		float a = -2;
-		float v = 2 * (1 - s);
-		float y = 1 - 2 * s;
-		float w = e / 3.6e5f * (1-0.8f*s);
-
-		return y + (v + a * c / 2) * c + (1+2*s)*(1-Mathf.Exp(-w));
-	}
-
-	public static float HyperCurve (float x)
-	{
-		return (Mathf.Sqrt (x * x + 1) + x) / 2;
-	}
-
-	private float KerbalContribution (ProtoCrewMember crew, float stupidity,
-									  float courage, bool isBadass)
+	private double KerbalContribution (ProtoCrewMember crew)
 	{
 		string expstr = KerbalExt.Get (crew, "experience:task=Workshop");
 		float experience = 0;
@@ -197,143 +136,137 @@ public class ExWorkshop : PartModule, IModuleInfo
 			float.TryParse (expstr, out experience);
 		}
 
-		float contribution;
+		double contribution;
 
-		if (isBadass) {
-			contribution = Baddass (stupidity, courage, experience);
+		if (crew.isBadass) {
+			contribution = Baddass (crew.stupidity, crew.courage, experience);
 		} else {
-			contribution = Normal (stupidity, courage, experience);
+			contribution = Normal (crew.stupidity, crew.courage, experience);
 		}
-		if (useSkill) {
-			if (crew.GetEffect<ExConstructionSkill> () != null) {
-				if (!enableUnskilled) {
-					// can't work here, but may not know to keep out of the way.
-					contribution = Mathf.Min (contribution, 0);
+		bool hasConstructionSkill = crew.GetEffect<ELConstructionSkill> () != null;
+		if (!hasConstructionSkill) {
+			if (!enableUnskilled) {
+				// can't work here, but may not know to keep out of the way.
+				contribution = Math.Min (contribution, 0);
+			}
+			if (crew.experienceLevel >= 3) {
+				// can resist "ooh, what does this button do?"
+				contribution = Math.Max (contribution, 0);
+			}
+		} else {
+			switch (crew.experienceLevel) {
+			case 0:
+				if (!enableSkilled && !SupportInexperienced) {
+					// can't work here, but knows to keep out of the way.
+					contribution = 0;
 				}
-				if (crew.experienceLevel >= 3) {
-					// can resist "ooh, what does this button do?"
-					contribution = Mathf.Max (contribution, 0);
-				}
-			} else {
-				switch (crew.experienceLevel) {
-				case 0:
-					if (!enableSkilled && !SupportInexperienced) {
-						// can't work here, but knows to keep out of the way.
-						contribution = 0;
-					}
-					break;
-				case 1:
-					break;
-				case 2:
-					if (SupportInexperienced) {
-						// He's learned the ropes.
-						contribution = HyperCurve (contribution);
-					}
-					break;
-				default:
-					// He's learned the ropes very well.
+				break;
+			case 1:
+				break;
+			case 2:
+				if (SupportInexperienced) {
+					// He's learned the ropes.
 					contribution = HyperCurve (contribution);
-					break;
 				}
+				break;
+			default:
+				// He's learned the ropes very well.
+				contribution = HyperCurve (contribution);
+				break;
 			}
 		}
-		Debug.Log (String.Format ("[EL Workshop] Kerbal: "
-								  + "{0} {1} {2} {3} {4}({5}) {6} {7} {8} {9} {10}",
-								  crew.name, stupidity, courage, isBadass,
-								  experience, expstr, contribution,
-								  crew.GetEffect<ExConstructionSkill> () != null,
-								  crew.experienceLevel,
-								  enableSkilled, SupportInexperienced));
+		/*
+		Debug.LogFormat ("[EL Workshop] Kerbal: "
+						 + "{0} s:{1} c:{2} b:{3} e:{4}({5}) c:{6} hs:{7} l:{8} es:{9} si:{10}",
+						 crew.name, crew.stupidity, crew.courage,
+						 crew.isBadass, experience, expstr,
+						 contribution, hasConstructionSkill,
+						 crew.experienceLevel,
+						 enableSkilled, SupportInexperienced);
+		*/
 		return contribution;
 	}
 
-	private void DetermineProductivity ()
+	public void UpdateProductivity ()
 	{
-		float kh = 0;
+		double kh = 0;
 		enableSkilled = false;
 		enableUnskilled = false;
 		var crewList = EL_Utils.GetCrewList (part);
-		if (useSkill) {
-			foreach (var crew in crewList) {
-				if (crew.GetEffect<ExConstructionSkill> () != null) {
-					if (crew.experienceLevel >= 4) {
-						enableSkilled = true;
-					}
-					if (crew.experienceLevel >= 5) {
-						enableUnskilled = true;
-					}
+		foreach (var crew in crewList) {
+			if (crew.GetEffect<ELConstructionSkill> () != null) {
+				if (crew.experienceLevel >= 4) {
+					enableSkilled = true;
+				}
+				if (crew.experienceLevel >= 5) {
+					enableUnskilled = true;
 				}
 			}
 		}
 		foreach (var crew in crewList) {
-			kh += KerbalContribution (crew, crew.stupidity, crew.courage,
-									  crew.isBadass);
+			kh += KerbalContribution (crew);
 		}
-		Productivity = kh * ProductivityFactor;
+		Productivity = kh * ProductivityFactor + UnmannedProductivity;
+		//Debug.LogFormat("[ELWorkshop] UpdateProductivity: {0}", Productivity);
 	}
 
 	void onCrewTransferred (GameEvents.HostedFromToAction<ProtoCrewMember,Part> hft)
 	{
 		if (hft.from != part && hft.to != part)
 			return;
-		Debug.Log (String.Format ("[EL Workshop] transfer: {0} {1} {2}",
-								  hft.host, hft.from, hft.to));
-		DetermineProductivity ();
+		//Debug.LogFormat ("[EL Workshop] transfer: {0} {1} {2}",
+		//				  hft.host, hft.from, hft.to);
+		UpdateProductivity ();
 	}
 
-	private IEnumerator WaitAndDetermineProductivity ()
+	private IEnumerator WaitAndUpdateProductivity ()
 	{
 		yield return null;
-		DetermineProductivity ();
+		UpdateProductivity ();
 	}
 
 	void onPartCouple (GameEvents.FromToAction<Part,Part> hft)
 	{
-		Debug.Log (String.Format ("[EL Workshop] couple: {0} {1}",
-								  hft.from, hft.to));
+		//Debug.LogFormat ("[EL Workshop] couple: {0} {1}", hft.from, hft.to);
 		if (hft.to != part)
 			return;
-		StartCoroutine (WaitAndDetermineProductivity ());
+		StartCoroutine (WaitAndUpdateProductivity ());
 	}
 
 	void onPartUndock (Part p)
 	{
-		Debug.Log (String.Format ("[EL Workshop] undock: {0} {1}",
-								  p, p.parent));
+		//Debug.LogFormat ("[EL Workshop] undock: {0} {1}", p, p.parent);
 		if (p.parent != part)
 			return;
-		StartCoroutine (WaitAndDetermineProductivity ());
+		StartCoroutine (WaitAndUpdateProductivity ());
 	}
 
 	public override void OnLoad (ConfigNode node)
 	{
 		if (HighLogic.LoadedScene == GameScenes.FLIGHT) {
-			Debug.Log (String.Format ("[EL Workshop] {0} cap: {1} seats: {2}",
-					  part, part.CrewCapacity,
-					  part.FindModulesImplementing<KerbalSeat> ().Count));
+			//Debug.LogFormat ("[EL Workshop] {0} cap: {1} seats: {2}",
+			//		  part, part.CrewCapacity,
+			//		  part.FindModulesImplementing<KerbalSeat> ().Count);
+			bool functional = false;
 			if (IgnoreCrewCapacity || part.CrewCapacity > 0) {
 				GameEvents.onCrewTransferred.Add (onCrewTransferred);
-				GameEvents.onVesselWasModified.Add (onVesselWasModified);
 				functional = true;
-			} else if (part.FindModulesImplementing<KerbalSeat> ().Count > 0) {
+			}
+			if (part.FindModulesImplementing<KerbalSeat> ().Count > 0) {
 				GameEvents.onPartCouple.Add (onPartCouple);
 				GameEvents.onPartUndock.Add (onPartUndock);
-				GameEvents.onVesselWasModified.Add (onVesselWasModified);
 				functional = true;
-			} else {
-				functional = false;
+			}
+			if (!functional) {
 				Fields["Productivity"].guiActive = false;
 				Fields["VesselProductivity"].guiActive = false;
 			}
-		}
-		if (node.HasValue ("lastUpdateString")) {
-			double.TryParse (node.GetValue ("lastUpdateString"), out lastUpdate);
+			isActive = functional;
 		}
 	}
 
 	public override void OnSave (ConfigNode node)
 	{
-		node.AddValue ("lastUpdateString", lastUpdate.ToString ("G17"));
 	}
 
 	void OnDestroy ()
@@ -341,90 +274,21 @@ public class ExWorkshop : PartModule, IModuleInfo
 		GameEvents.onCrewTransferred.Remove (onCrewTransferred);
 		GameEvents.onPartCouple.Remove (onPartCouple);
 		GameEvents.onPartUndock.Remove (onPartUndock);
-		GameEvents.onVesselWasModified.Remove (onVesselWasModified);
-	}
-
-	private IEnumerator WaitAndStartWorkshop ()
-	{
-		yield return null;
-		yield return null;
-		workshop_started = true;
 	}
 
 	public override void OnStart (PartModule.StartState state)
 	{
-		workshop_started = false;
-		if (!functional) {
-			enabled = false;
+		if (vessel == null) {
+			// in an editor
 			return;
 		}
-		if (state == PartModule.StartState.None
-			|| state == PartModule.StartState.Editor)
-			return;
-		DiscoverWorkshops ();
-		useSkill = true;
-		StartCoroutine (WaitAndDetermineProductivity ());
-		StartCoroutine (WaitAndStartWorkshop ());
+		workNet = vessel.FindVesselModuleImplementing<ELVesselWorkNet> ();
 	}
 
 	private void Update ()
 	{
-		if (master != null) {
-			VesselProductivity = master.vessel_productivity;
-		}
-	}
-
-	double GetDeltaTime ()
-	{
-		double delta = -1;
-		if (Time.timeSinceLevelLoad >= 1 && FlightGlobals.ready) {
-			if (lastUpdate < 1e-9) {
-				lastUpdate = Planetarium.GetUniversalTime ();
-			} else {
-				var currentTime = Planetarium.GetUniversalTime ();
-				delta = currentTime - lastUpdate;
-				delta = Math.Min (delta, ResourceUtilities.GetMaxDeltaTime ());
-				lastUpdate += delta;
-			}
-		}
-		return delta;
-	}
-
-	public void FixedUpdate ()
-	{
-		if (!workshop_started) {
-			return;
-		}
-		double timeDelta = GetDeltaTime ();
-		if (timeDelta < 1e-9) {
-			return;
-		}
-		if (this == master) {
-			double hours = 0;
-			vessel_productivity = 0;
-			for (int i = 0; i < sources.Count; i++) {
-				var source = sources[i];
-				hours += source.GetProductivity (timeDelta);
-				vessel_productivity += source.Productivity;
-			}
-			//Debug.Log (String.Format ("[EL Workshop] KerbalHours: {0}",
-			//						  hours));
-			int num_sinks = 0;
-			for (int i = 0; i < sinks.Count; i++) {
-				var sink = sinks[i];
-				if (sink.isActive ()) {
-					num_sinks++;
-				}
-			}
-			if (num_sinks > 0) {
-				double work = hours / num_sinks;
-				for (int i = 0; i < sinks.Count; i++) {
-					var sink = sinks[i];
-					if (sink.isActive ()) {
-						sink.DoWork (work);
-					}
-				}
-			}
+		if (workNet != null) {
+			VesselProductivity = workNet.Productivity;
 		}
 	}
 }

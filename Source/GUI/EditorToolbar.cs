@@ -26,7 +26,7 @@ using KSP.UI.Screens;
 
 namespace ExtraplanetaryLaunchpads {
 	[KSPAddon (KSPAddon.Startup.EditorAny, false) ]
-	public class ExEditorToolbar : MonoBehaviour
+	public class ELEditorToolbar : MonoBehaviour
 	{
 		static Texture texture;
 		static Icon icon;
@@ -47,7 +47,7 @@ namespace ExtraplanetaryLaunchpads {
 				}
 			}
 			cat = PartCategorizer.Instance.filters.Find (c => c.button.categoryName == "Filter by Function");
-			PartCategorizer.AddCustomSubcategoryFilter (cat, "EL Items", icon, elItemFilter);
+			PartCategorizer.AddCustomSubcategoryFilter (cat, "EL Items", "EL Items", icon, elItemFilter);
 		}
 
 		void Awake ()
@@ -67,7 +67,7 @@ namespace ExtraplanetaryLaunchpads {
 				if (ap.partPrefab.Modules != null) {
 					foreach (PartModule mod in ap.partPrefab.Modules) {
 						if (mod.moduleName != null
-							&& mod.moduleName.StartsWith ("Ex")) {
+							&& mod.moduleName.StartsWith ("EL")) {
 							isELItem = true;
 							break;
 						}
@@ -87,7 +87,7 @@ namespace ExtraplanetaryLaunchpads {
 				}
 			}
 			elItems.Add ("OMD");
-			elItems.Add ("ExMallet");
+			elItems.Add ("ELMallet");
 			elItems.Add ("Magnetometer");
 		}
 

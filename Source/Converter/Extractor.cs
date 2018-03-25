@@ -6,7 +6,7 @@ using System.Text;
 using UnityEngine;
 
 namespace ExtraplanetaryLaunchpads {
-	public class ExExtractor: BaseDrill, IResourceConsumer//, IModuleInfo
+	public class ELExtractor: BaseDrill, IResourceConsumer//, IModuleInfo
 	{
 		[KSPField(guiName = "", guiActive = true, guiActiveEditor = false)]
 		public string ResourceStatus = "n/a";
@@ -51,7 +51,28 @@ namespace ExtraplanetaryLaunchpads {
 
 		public override string GetInfo()
 		{
-			return "";
+			ConversionRecipe recipe = LoadRecipe (Rate);
+			StringBuilder sb = StringBuilderCache.Acquire ();
+			sb.Append (ConverterName);
+			if (recipe.Inputs.Count > 0) {
+				sb.Append ("\n\n<color=#bada55>Inputs:</color>");
+				for (int i = 0, c = recipe.Inputs.Count; i < c; i++) {
+					EL_Utils.PrintResource (sb, recipe.Inputs[i], "t");
+				}
+			}
+			if (recipe.Outputs.Count > 0) {
+				sb.Append ("\n<color=#bada55>Outputs:</color>");
+				for (int i = 0, c = recipe.Outputs.Count; i < c; i++) {
+					EL_Utils.PrintResource (sb, recipe.Outputs[i], "t");
+				}
+			}
+			if (recipe.Requirements.Count > 0) {
+				sb.Append ("\n<color=#bada55>Requirements:</color>");
+				for (int i = 0, c = recipe.Requirements.Count; i < c; i++) {
+					EL_Utils.PrintResource (sb, recipe.Requirements[i], "t");
+				}
+			}
+			return sb.ToStringAndRelease ();
 		}
 
 		public override bool IsSituationValid()
@@ -161,7 +182,7 @@ namespace ExtraplanetaryLaunchpads {
 				status = "Inactive";
 				return null;
 			}
-			rate = amount * Efficiency;
+			rate = amount * GetEfficiencyMultiplier();
 			return LoadRecipe(rate);
 		}
 	}

@@ -24,7 +24,7 @@ using KSP.IO;
 
 namespace ExtraplanetaryLaunchpads {
 
-	public class ExLaunchPad : PartModule, IModuleInfo, IPartMassModifier, ExBuildControl.IBuilder
+	public class ELLaunchpad : PartModule, IModuleInfo, IPartMassModifier, ELBuildControl.IBuilder, ELControlInterface, ELWorkSink
 	{
 		[KSPField (isPersistant = false)]
 		public float SpawnHeightOffset = 0.0f;
@@ -32,6 +32,9 @@ namespace ExtraplanetaryLaunchpads {
 		public string SpawnTransform;
 		[KSPField (isPersistant = true, guiActive = true, guiName = "Pad name")]
 		public string PadName = "";
+
+		[KSPField (isPersistant = true)]
+		public bool Operational = true;
 
 		public float spawnOffset = 0;
 		Transform launchTransform;
@@ -60,7 +63,7 @@ namespace ExtraplanetaryLaunchpads {
 		public bool canBuild
 		{
 			get {
-				return true;
+				return canOperate;
 			}
 		}
 
@@ -71,7 +74,7 @@ namespace ExtraplanetaryLaunchpads {
 			}
 		}
 
-		public ExBuildControl control
+		public ELBuildControl control
 		{
 			get;
 			private set;
@@ -123,10 +126,17 @@ namespace ExtraplanetaryLaunchpads {
 			}
 		}
 
-		[KSPEvent (guiActive=false, active = true)]
-		void ExDiscoverWorkshops (BaseEventData data)
+		public bool isBusy
 		{
-			data.Get<List<ExWorkSink>> ("sinks").Add (control);
+			get {
+				return control.state > ELBuildControl.State.Planning;
+			}
+		}
+
+		public bool canOperate
+		{
+			get { return Operational; }
+			set { Operational = value; }
 		}
 
 		public void SetCraftMass (double mass)
@@ -144,7 +154,7 @@ namespace ExtraplanetaryLaunchpads {
 			return ModifierChangeWhen.CONSTANTLY;
 		}
 
-		public Transform PlaceShip (ShipConstruct ship, ExBuildControl.Box vessel_bounds)
+		public Transform PlaceShip (ShipConstruct ship, ELBuildControl.Box vessel_bounds)
 		{
 			if (SpawnTransform != "") {
 				launchTransform = part.FindModelTransform (SpawnTransform);
@@ -195,7 +205,7 @@ namespace ExtraplanetaryLaunchpads {
 
 		public override void OnAwake ()
 		{
-			control = new ExBuildControl (this);
+			control = new ELBuildControl (this);
 		}
 
 		public override void OnStart (PartModule.StartState state)
@@ -217,27 +227,44 @@ namespace ExtraplanetaryLaunchpads {
 		[KSPEvent (guiActive = true, guiName = "Hide UI", active = false)]
 		public void HideUI ()
 		{
-			ExBuildWindow.HideGUI ();
+			ELBuildWindow.HideGUI ();
 		}
 
 		[KSPEvent (guiActive = true, guiName = "Show UI", active = false)]
 		public void ShowUI ()
 		{
-			ExBuildWindow.ShowGUI ();
-			ExBuildWindow.SelectPad (control);
+			ELBuildWindow.ShowGUI ();
+			ELBuildWindow.SelectPad (control);
 		}
 
 		[KSPEvent (guiActive = true, guiActiveEditor = true,
 				   guiName = "Rename", active = true)]
 		public void ShowRenameUI ()
 		{
-			ExRenameWindow.ShowGUI (this);
+			ELRenameWindow.ShowGUI (this);
 		}
 
 		public void UpdateMenus (bool visible)
 		{
 			Events["HideUI"].active = visible;
 			Events["ShowUI"].active = !visible;
+		}
+
+		public void DoWork (double kerbalHours)
+		{
+			control.DoWork (kerbalHours);
+		}
+
+		public bool isActive
+		{
+			get {
+				return control.isActive;
+			}
+		}
+
+		public double CalculateWork ()
+		{
+			return control.CalculateWork();
 		}
 	}
 }

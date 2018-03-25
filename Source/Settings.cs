@@ -33,7 +33,7 @@ namespace ExtraplanetaryLaunchpads {
 			GameScenes.TRACKSTATION,
 		})
 	]
-	public class ExSettings : ScenarioModule
+	public class ELSettings : ScenarioModule
 	{
 		static bool settings_loaded;
 		public static bool KIS_Present
@@ -61,6 +61,11 @@ namespace ExtraplanetaryLaunchpads {
 			get;
 			private set;
 		}
+		public static bool PreferBlizzy
+		{
+			get;
+			private set;
+		}
 
 		static Rect windowpos;
 		private static bool gui_enabled;
@@ -71,38 +76,36 @@ namespace ExtraplanetaryLaunchpads {
 			"Pause Game"
 		};
 
-		public static ExSettings current
+		public static ELSettings current
 		{
 			get {
 				var game = HighLogic.CurrentGame;
-				return game.scenarios.Select (s => s.moduleRef).OfType<ExSettings> ().SingleOrDefault ();
+				return game.scenarios.Select (s => s.moduleRef).OfType<ELSettings> ().SingleOrDefault ();
 			}
 		}
 
-		public override void OnLoad (ConfigNode config)
+		void ParseUseKAC (ConfigNode settings)
 		{
-			//Debug.Log (String.Format ("[EL] Settings load"));
-			var settings = config.GetNode ("Settings");
-			if (settings == null) {
-				settings = new ConfigNode ("Settings");
-				gui_enabled = true; // Show settings window on first startup
-			}
 			if (!settings.HasValue ("UseKAC")) {
 				var val = use_KAC;
 				settings.AddValue ("UseKAC", val);
-			}
-			if (!settings.HasValue ("KACAction")) {
-				var val = KACAction.ToString();
-				settings.AddValue ("KACAction", val);
 			}
 
 			var uks = settings.GetValue ("UseKAC");
 			bool uk = true;
 			bool.TryParse (uks, out uk);
 			use_KAC = uk;
+		}
+
+		void ParseKACAction (ConfigNode settings)
+		{
+			if (!settings.HasValue ("KACAction")) {
+				var val = KACAction.ToString();
+				settings.AddValue ("KACAction", val);
+			}
 
 			string str = settings.GetValue ("KACAction");
-			switch (str){
+			switch (str) {
 			case ("KillWarp"):
 				KACAction = KACWrapper.KACAPI.AlarmActionEnum.KillWarp;
 				break;
@@ -119,16 +122,70 @@ namespace ExtraplanetaryLaunchpads {
 				KACAction = KACWrapper.KACAPI.AlarmActionEnum.KillWarp;
 				break;
 			};
+		}
 
+		void UpdateToolbarButton ()
+		{
+			ELAppButton.UpdateVisibility ();
+			if (ELToolbar_SettingsWindow.Instance != null) {
+				ELToolbar_SettingsWindow.Instance.UpdateVisibility ();
+			}
+		}
+
+		void ParsePreferBlizzy (ConfigNode settings)
+		{
+			if (!settings.HasValue ("PreferBlizzy")) {
+				var val = PreferBlizzy.ToString();
+				settings.AddValue ("PreferBlizzy", val);
+			}
+
+			string str = settings.GetValue ("PreferBlizzy");
+			bool bval;
+			if (bool.TryParse (str, out bval)) {
+				PreferBlizzy = bval;
+			}
+			UpdateToolbarButton ();
+		}
+
+		void ParseShipInfo (ConfigNode settings)
+		{
 			if (settings.HasNode ("ShipInfo")) {
 				var node = settings.GetNode ("ShipInfo");
-				ExShipInfo.LoadSettings (node);
+				ELShipInfo.LoadSettings (node);
 			}
+		}
 
+		void ParseBuildWindow (ConfigNode settings)
+		{
 			if (settings.HasNode ("BuildWindow")) {
 				var node = settings.GetNode ("BuildWindow");
-				ExBuildWindow.LoadSettings (node);
+				ELBuildWindow.LoadSettings (node);
 			}
+		}
+
+		void ParseResourceWindow (ConfigNode settings)
+		{
+			if (settings.HasNode ("ResourceWindow")) {
+				var node = settings.GetNode ("ResourceWindow");
+				ELResourceWindow.LoadSettings (node);
+			}
+		}
+
+		public override void OnLoad (ConfigNode config)
+		{
+			//Debug.Log (String.Format ("[EL] Settings load"));
+			var settings = config.GetNode ("Settings");
+			if (settings == null) {
+				settings = new ConfigNode ("Settings");
+				gui_enabled = true; // Show settings window on first startup
+			}
+
+			ParseUseKAC (settings);
+			ParseKACAction (settings);
+			ParsePreferBlizzy (settings);
+			ParseShipInfo (settings);
+			ParseBuildWindow (settings);
+			ParseResourceWindow (settings);
 
 			if (HighLogic.LoadedScene == GameScenes.SPACECENTER) {
 				enabled = true;
@@ -139,17 +196,15 @@ namespace ExtraplanetaryLaunchpads {
 		{
 			//Debug.Log (String.Format ("[EL] Settings save: {0}", config));
 			var settings = new ConfigNode ("Settings");
-
-			bool uk = use_KAC;
-			settings.AddValue ("UseKAC", uk);
-
-			string ka = KACAction.ToString ();
-			settings.AddValue ("KACAction", ka);
-
 			config.AddNode (settings);
 
-			ExShipInfo.SaveSettings (settings.AddNode ("ShipInfo"));
-			ExBuildWindow.SaveSettings (settings.AddNode ("BuildWindow"));
+			settings.AddValue ("UseKAC", use_KAC);
+			settings.AddValue ("KACAction", KACAction.ToString ());
+			settings.AddValue ("PreferBlizzy", PreferBlizzy);
+
+			ELShipInfo.SaveSettings (settings.AddNode ("ShipInfo"));
+			ELBuildWindow.SaveSettings (settings.AddNode ("BuildWindow"));
+			ELResourceWindow.SaveSettings (settings.AddNode ("ResourceWindow"));
 		}
 
 		void LoadGlobalSettings ()
@@ -166,33 +221,9 @@ namespace ExtraplanetaryLaunchpads {
 			if (settings == null) {
 				return;
 			}
-			if (settings.HasValue ("UseKAC")) {
-				string str = settings.GetValue ("UseKAC");
-				bool val;
-				if (bool.TryParse (str, out val)) {
-					use_KAC = val;
-				}
-			}
-			if (settings.HasValue ("KACAction")) {
-				string str = settings.GetValue ("KACAction");
-				switch (str){
-				case ("KillWarp"):
-					KACAction = KACWrapper.KACAPI.AlarmActionEnum.KillWarp;
-					break;
-				case ("KillWarpOnly"):
-					KACAction = KACWrapper.KACAPI.AlarmActionEnum.KillWarpOnly;
-					break;
-				case ("MessageOnly"):
-					KACAction = KACWrapper.KACAPI.AlarmActionEnum.MessageOnly;
-					break;
-				case ("PauseGame"):
-					KACAction = KACWrapper.KACAPI.AlarmActionEnum.PauseGame;
-					break;
-				default:
-					KACAction = KACWrapper.KACAPI.AlarmActionEnum.KillWarp;
-					break;
-				};
-			}
+			ParseUseKAC (settings);
+			ParseKACAction (settings);
+			ParsePreferBlizzy (settings);
 		}
 		
 		public override void OnAwake ()
@@ -214,9 +245,20 @@ namespace ExtraplanetaryLaunchpads {
 		{
 			GUILayout.BeginVertical ();
 
+			bool pb = PreferBlizzy;
+			pb = GUILayout.Toggle (pb, "Use Blizzy's toolbar instead of App launcher");
+			if (pb != PreferBlizzy) {
+				PreferBlizzy = pb;
+				UpdateToolbarButton ();
+			}
+
 			bool uk = use_KAC;
 			uk = GUILayout.Toggle (uk, "Create alarms in Kerbal Alarm Clock");
 			use_KAC = uk;
+
+			bool si = ELShipInfo.showGUI;
+			si = GUILayout.Toggle (si, "Build Resources window currently visible in editor");
+			ELShipInfo.showGUI = si;
 
 			if (uk) {
 				int actionint;
@@ -283,7 +325,7 @@ namespace ExtraplanetaryLaunchpads {
 							Screen.height / 2 - 30, 0, 0);
 					}
 					string name = "Extraplanetary Launchpad";
-					string ver = ExtraplanetaryLaunchpadsVersionReport.GetVersion ();
+					string ver = ELVersionReport.GetVersion ();
 					windowpos = GUILayout.Window (GetInstanceID (),
 						windowpos, WindowGUI,
 						name + " " + ver,

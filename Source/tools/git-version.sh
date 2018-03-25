@@ -1,7 +1,7 @@
 #! /bin/sh
 
 full_version=`./tools/git-version-gen --prefix v .tarball-version`
-version=`echo $full_version | sed -e 's/-/\t/' | cut -f 1`
+version=`echo $full_version | cut -d '-' -f 1`
 
 sed -e "s/@FULL_VERSION@/$full_version/" -e "s/@VERSION@/$version/" assembly/AssemblyInfo.in > assembly/AssemblyInfo.cs-
 
@@ -27,7 +27,7 @@ cat > bin/EL.version <<EOF
 {
 	"NAME":"Extraplanetary Launchpads",
 	"URL":"http://taniwha.org/~bill/EL.version",
-	"DOWNLOAD":"http://forum.kerbalspaceprogram.com/threads/59545",
+	"DOWNLOAD":"http://taniwha.org/~bill/Extraplanetary_Launchpads_v$full_version.zip",
 	"VERSION":{"MAJOR":$MAJOR,"MINOR":$MINOR,"PATCH":$PATCH,"BUILD":$BUILD},
 	"KSP_VERSION":{"MAJOR":$KSPMAJOR,"MINOR":$KSPMINOR,"PATCH":$KSPPATCH}
 }

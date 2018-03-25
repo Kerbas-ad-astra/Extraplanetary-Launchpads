@@ -25,22 +25,43 @@ namespace ExtraplanetaryLaunchpads {
 	using Toolbar;
 
 	[KSPAddon(KSPAddon.Startup.MainMenu, true)]
-	public class ExAppButton : MonoBehaviour
+	public class ELAppButton : MonoBehaviour
 	{
+		const ApplicationLauncher.AppScenes buttonScenes = ApplicationLauncher.AppScenes.SPACECENTER | ApplicationLauncher.AppScenes.FLIGHT | ApplicationLauncher.AppScenes.VAB | ApplicationLauncher.AppScenes.SPH;
 		private static ApplicationLauncherButton button = null;
 
 		public static Callback Toggle = delegate {};
+		public static Callback RightToggle = delegate {};
+
+		static bool buttonVisible
+		{
+			get {
+				if (ToolbarManager.Instance == null) {
+					return true;
+				}
+				return !ELSettings.PreferBlizzy;
+			}
+		}
+
+		public static void UpdateVisibility ()
+		{
+			if (button != null) {
+				button.VisibleInScenes = buttonVisible ? buttonScenes : 0;
+			}
+		}
 
 		private void onToggle ()
 		{
 			Toggle();
 		}
 
+		private void onRightClick ()
+		{
+			RightToggle();
+		}
+
 		public void Start()
 		{
-			if (ToolbarManager.Instance != null) {
-				return;
-			}
 			GameObject.DontDestroyOnLoad(this);
 			GameEvents.onGUIApplicationLauncherReady.Add(OnGUIAppLauncherReady);
 		}
@@ -54,89 +75,107 @@ namespace ExtraplanetaryLaunchpads {
 		{
 			if (ApplicationLauncher.Ready && button == null) {
 				var tex = GameDatabase.Instance.GetTexture("ExtraplanetaryLaunchpads/Textures/icon_button", false);
-				button = ApplicationLauncher.Instance.AddModApplication(onToggle, onToggle, null, null, null, null, ApplicationLauncher.AppScenes.SPACECENTER | ApplicationLauncher.AppScenes.FLIGHT | ApplicationLauncher.AppScenes.VAB | ApplicationLauncher.AppScenes.SPH, tex);
+				button = ApplicationLauncher.Instance.AddModApplication(onToggle, onToggle, null, null, null, null, buttonScenes, tex);
+				button.onRightClick += onRightClick;
+				UpdateVisibility ();
 			}
 		}
 	}
 
 	[KSPAddon (KSPAddon.Startup.EditorAny, false)]
-	public class ExToolbar_ShipInfo : MonoBehaviour
+	public class ELToolbar_ShipInfo : MonoBehaviour
 	{
-		private IButton ExEditorButton;
+		private IButton ELEditorButton;
 
 		public void Awake ()
 		{
-			ExAppButton.Toggle += ExShipInfo.ToggleGUI;
+			ELAppButton.Toggle += ELShipInfo.ToggleGUI;
 
 			if (ToolbarManager.Instance == null) {
 				return;
 			}
-			ExEditorButton = ToolbarManager.Instance.add ("ExtraplanetaryLaunchpads", "ExEditorButton");
-			ExEditorButton.TexturePath = "ExtraplanetaryLaunchpads/Textures/icon_button";
-			ExEditorButton.ToolTip = "EL Build Resources Display";
-			ExEditorButton.OnClick += (e) => ExShipInfo.ToggleGUI ();
+			ELEditorButton = ToolbarManager.Instance.add ("ExtraplanetaryLaunchpads", "ELEditorButton");
+			ELEditorButton.Visible = ELSettings.PreferBlizzy;
+			ELEditorButton.TexturePath = "ExtraplanetaryLaunchpads/Textures/icon_button";
+			ELEditorButton.ToolTip = "EL Build Resources Display";
+			ELEditorButton.OnClick += (e) => ELShipInfo.ToggleGUI ();
 		}
 
 		void OnDestroy()
 		{
-			if (ExEditorButton != null) {
-				ExEditorButton.Destroy ();
+			if (ELEditorButton != null) {
+				ELEditorButton.Destroy ();
 			}
-			ExAppButton.Toggle -= ExShipInfo.ToggleGUI;
+			ELAppButton.Toggle -= ELShipInfo.ToggleGUI;
 		}
 	}
 
 	[KSPAddon (KSPAddon.Startup.Flight, false)]
-	public class ExToolbar_BuildWindow : MonoBehaviour
+	public class ELToolbar_BuildWindow : MonoBehaviour
 	{
-		private IButton ExBuildWindowButton;
+		private IButton ELBuildWindowButton;
 
 		public void Awake ()
 		{
-			ExAppButton.Toggle += ExBuildWindow.ToggleGUI;
+			ELAppButton.Toggle += ELBuildWindow.ToggleGUI;
+			ELAppButton.RightToggle += ELResourceWindow.ToggleGUI;
 
 			if (ToolbarManager.Instance == null) {
 				return;
 			}
-			ExBuildWindowButton = ToolbarManager.Instance.add ("ExtraplanetaryLaunchpads", "ExBuildWindowButton");
-			ExBuildWindowButton.TexturePath = "ExtraplanetaryLaunchpads/Textures/icon_button";
-			ExBuildWindowButton.ToolTip = "EL Build Window";
-			ExBuildWindowButton.OnClick += (e) => ExBuildWindow.ToggleGUI ();
+			ELBuildWindowButton = ToolbarManager.Instance.add ("ExtraplanetaryLaunchpads", "ELBuildWindowButton");
+			ELBuildWindowButton.Visible = ELSettings.PreferBlizzy;
+			ELBuildWindowButton.TexturePath = "ExtraplanetaryLaunchpads/Textures/icon_button";
+			ELBuildWindowButton.ToolTip = "EL Build Window";
+			ELBuildWindowButton.OnClick += (e) => ELBuildWindow.ToggleGUI ();
 		}
 
 		void OnDestroy()
 		{
-			if (ExBuildWindowButton != null) {
-				ExBuildWindowButton.Destroy ();
+			if (ELBuildWindowButton != null) {
+				ELBuildWindowButton.Destroy ();
 			}
-			ExAppButton.Toggle -= ExBuildWindow.ToggleGUI;
+			ELAppButton.Toggle -= ELBuildWindow.ToggleGUI;
+			ELAppButton.RightToggle -= ELResourceWindow.ToggleGUI;
 		}
 	}
 
 	[KSPAddon (KSPAddon.Startup.SpaceCentre, false)]
-	public class ExToolbar_SettingsWindow : MonoBehaviour
+	public class ELToolbar_SettingsWindow : MonoBehaviour
 	{
-		private IButton ExSettingsButton;
+		private IButton ELSettingsButton;
+
+		public static ELToolbar_SettingsWindow Instance { get; private set; }
+
+		public void UpdateVisibility ()
+		{
+			if (ELSettingsButton != null) {
+				ELSettingsButton.Visible = ELSettings.PreferBlizzy;
+			}
+		}
 
 		public void Awake ()
 		{
-			ExAppButton.Toggle += ExSettings.ToggleGUI;
+			Instance = this;
+			ELAppButton.Toggle += ELSettings.ToggleGUI;
 
 			if (ToolbarManager.Instance == null) {
 				return;
 			}
-			ExSettingsButton = ToolbarManager.Instance.add ("ExtraplanetaryLaunchpads", "ExSettingsButton");
-			ExSettingsButton.TexturePath = "ExtraplanetaryLaunchpads/Textures/icon_button";
-			ExSettingsButton.ToolTip = "EL Settings Window";
-			ExSettingsButton.OnClick += (e) => ExSettings.ToggleGUI ();
+			ELSettingsButton = ToolbarManager.Instance.add ("ExtraplanetaryLaunchpads", "ELSettingsButton");
+			ELSettingsButton.Visible = ELSettings.PreferBlizzy;
+			ELSettingsButton.TexturePath = "ExtraplanetaryLaunchpads/Textures/icon_button";
+			ELSettingsButton.ToolTip = "EL Settings Window";
+			ELSettingsButton.OnClick += (e) => ELSettings.ToggleGUI ();
 		}
 
 		void OnDestroy()
 		{
-			if (ExSettingsButton != null) {
-				ExSettingsButton.Destroy ();
+			Instance = null;
+			if (ELSettingsButton != null) {
+				ELSettingsButton.Destroy ();
 			}
-			ExAppButton.Toggle -= ExSettings.ToggleGUI;
+			ELAppButton.Toggle -= ELSettings.ToggleGUI;
 		}
 	}
 }

@@ -25,11 +25,15 @@ using KSP.IO;
 
 namespace ExtraplanetaryLaunchpads {
 
-	public class ExSurveyStation : PartModule, IModuleInfo, IPartMassModifier, ExBuildControl.IBuilder
+	public class ELSurveyStation : PartModule, IModuleInfo, IPartMassModifier, ELBuildControl.IBuilder, ELControlInterface, ELWorkSink
 	{
-		[KSPField (isPersistant = true)]
+		[KSPField (isPersistant = true, guiActive = true, guiName = "Pad name")]
 		public string StationName = "";
 
+		[KSPField (isPersistant = true)]
+		public bool Operational = true;
+
+		EL_VirtualPad virtualPad;
 		DropDownList site_list;
 		List<SurveySite> available_sites;
 		SurveySite site;
@@ -66,7 +70,7 @@ namespace ExtraplanetaryLaunchpads {
 				if (vessel.situation == Vessel.Situations.LANDED
 					|| vessel.situation == Vessel.Situations.SPLASHED
 					|| vessel.situation == Vessel.Situations.PRELAUNCH) {
-					return true;
+					return canOperate;
 				}
 				return false;
 			}
@@ -79,7 +83,7 @@ namespace ExtraplanetaryLaunchpads {
 			}
 		}
 
-		public ExBuildControl control
+		public ELBuildControl control
 		{
 			get;
 			private set;
@@ -95,9 +99,6 @@ namespace ExtraplanetaryLaunchpads {
 		public new Part part
 		{
 			get {
-				if (site != null) {
-					return site[0].part;
-				}
 				return base.part;
 			}
 		}
@@ -112,23 +113,58 @@ namespace ExtraplanetaryLaunchpads {
 			}
 		}
 
+		public bool isBusy
+		{
+			get {
+				return control.state > ELBuildControl.State.Planning;
+			}
+		}
+
+		public bool canOperate
+		{
+			get { return Operational; }
+			set {
+				Operational = value;
+				DetermineRange ();
+			}
+		}
+
 		public void PadSelection_start ()
 		{
 			if (site_list == null) {
 				return;
 			}
-			site_list.styleListItem = ExBuildWindow.Styles.listItem;
-			site_list.styleListBox = ExBuildWindow.Styles.listBox;
+			site_list.styleListItem = ELStyles.listItem;
+			site_list.styleListBox = ELStyles.listBox;
 			site_list.DrawBlockingSelector ();
 		}
 
-		void Select_Site (SurveySite selected_site)
+		void SetSite (SurveySite selected_site)
 		{
-			if (site != selected_site) {
-				Highlight (false);
+			if (site == selected_site) {
+				if (site != null && virtualPad != null) {
+					// update display
+					virtualPad.SetSite (site);
+				}
+				return;
 			}
+			Highlight (false);
 			site = selected_site;
-			site_list.SelectItem (available_sites.IndexOf (site));
+			if (site == null) {
+				if (virtualPad != null) {
+					Destroy (virtualPad.gameObject);
+					virtualPad = null;
+				}
+			} else {
+				if (virtualPad == null) {
+					virtualPad = EL_VirtualPad.Create (site);
+				} else {
+					virtualPad.SetSite (site);
+				}
+			}
+			if (site_list != null) {
+				site_list.SelectItem (available_sites.IndexOf (site));
+			}
 			// The build window will take care of turning on highlighting
 		}
 
@@ -136,9 +172,9 @@ namespace ExtraplanetaryLaunchpads {
 		{
 			if (site_list == null) {
 				GUILayout.BeginHorizontal ();
-				if (control.state == ExBuildControl.State.Complete) {
+				if (control.state == ELBuildControl.State.Complete) {
 					GUILayout.Label ("No sites found. Explosions likely.",
-									 ExBuildWindow.Styles.red);
+									 ELStyles.red);
 				} else {
 					GUILayout.Label ("No sites found.");
 				}
@@ -146,7 +182,7 @@ namespace ExtraplanetaryLaunchpads {
 			} else {
 				GUILayout.BeginHorizontal ();
 				site_list.DrawButton ();
-				Select_Site (available_sites[site_list.SelectedIndex]);
+				SetSite (available_sites[site_list.SelectedIndex]);
 				GUILayout.EndHorizontal ();
 			}
 		}
@@ -169,215 +205,11 @@ namespace ExtraplanetaryLaunchpads {
 			}
 			if (site != null) {
 				foreach (var stake in site) {
-					stake.Highlight (on);
-				}
-			}
-		}
-
-		[KSPEvent (guiActive=false, active = true)]
-		void ExDiscoverWorkshops (BaseEventData data)
-		{
-			data.Get<List<ExWorkSink>> ("sinks").Add (control);
-		}
-
-		class Points
-		{
-			Dictionary<string, Vector3d> points;
-			Dictionary<string, Vector3d> bounds;
-			CelestialBody body;
-			public Vector3d center;
-
-			public Points (SurveySite site)
-			{
-				Dictionary<string, int> counts = new Dictionary<string, int> ();
-				Dictionary<string, int> bcounts = new Dictionary<string, int> ();
-				int count = 0;
-
-				points = new Dictionary<string, Vector3d> ();
-				bounds = new Dictionary<string, Vector3d> ();
-
-				body = site.Body;
-
-				center = Vector3d.zero;
-				foreach (var stake in site) {
-					string key = ExSurveyStake.StakeUses[stake.use];
-					var pos = stake.vessel.GetWorldPos3D ();
-					center += pos;
-					count++;
-
-					Dictionary<string, Vector3d> pd;
-					Dictionary<string, int> cd;
-					if (stake.bound && key != "Origin") {
-						pd = bounds;
-						cd = bcounts;
-					} else {
-						pd = points;
-						cd = counts;
-					}
-
-					if (pd.ContainsKey (key)) {
-						pd[key] += pos;
-						cd[key] += 1;
-					} else {
-						pd[key] = pos;
-						cd[key] = 1;
-					}
-				}
-				center /= (double) count;
-				foreach (var key in ExSurveyStake.StakeUses) {
-					if (points.ContainsKey (key)) {
-						points[key] /= (double) counts[key];
-					}
-				}
-				if (points.ContainsKey ("Origin")) {
-					center = points["Origin"];
-				}
-				foreach (var key in ExSurveyStake.StakeUses) {
-					if (bounds.ContainsKey (key)) {
-						bounds[key] /= (double) bcounts[key];
-						bounds[key] -= center;
+					if (stake.stake != null) {
+						stake.stake.Highlight (on);
 					}
 				}
 			}
-
-			public Vector3d LocalUp ()
-			{
-				double lat = body.GetLatitude (center);
-				double lon = body.GetLongitude (center);
-				return body.GetSurfaceNVector (lat, lon);
-			}
-
-			public Vector3d GetDirection (string dir)
-			{
-				Vector3d v;
-				string p = "+" + dir;
-				string m = "-" + dir;
-
-				if (points.ContainsKey (p)) {
-					if (points.ContainsKey (m)) {
-						v = Vector3d.Normalize (points[p] - points[m]);
-					} else {
-						v = Vector3d.Normalize (points[p] - center);
-					}
-				} else if (points.ContainsKey (m)) {
-					v = Vector3d.Normalize (center - points[m]);
-				} else {
-					v = Vector3d.zero;
-				}
-				return v;
-			}
-
-			public Quaternion ChooseRotation (Vector3d r, Vector3d f)
-			{
-				// find a reference frame that is close to the given possibly
-				// non-orthogonal frame, but where up is always up
-				Vector3d u = LocalUp ();
-				r = Vector3d.Normalize (r - Vector3d.Dot (r, u) * u);
-				f = Vector3d.Normalize (f - Vector3d.Dot (f, u) * u);
-				f = Vector3d.Normalize (f + Vector3d.Cross (r, u));
-				return Quaternion.LookRotation (f, u);
-			}
-
-			public Quaternion ChooseRotation (Vector3d r, Vector3d f, Vector3d u)
-			{
-				// find a reference frame that is close to the given possibly
-				// non-orthogonal frame
-				u = u + Vector3d.Normalize (Vector3d.Cross (f, r));
-				u.Normalize ();
-				r = Vector3d.Normalize (r - Vector3d.Dot (r, u) * u);
-				f = Vector3d.Normalize (f - Vector3d.Dot (f, u) * u);
-				f = Vector3d.Normalize (f + Vector3d.Cross (r, u));
-				return Quaternion.LookRotation (f, u);
-			}
-
-			public Vector3 ShiftBounds (Transform frame, Vector3 pos,
-										ExBuildControl.Box box)
-			{
-				Vector3 shift = new Vector3 (-pos.x, -box.min.y, -pos.z);
-				Vector3 mins = box.min - pos;
-				Vector3 maxs = box.max - pos;
-				Vector3 mid = (mins + maxs) / 2;
-
-				if (bounds.ContainsKey ("+X")) {
-					float max_x = Vector3.Dot (frame.right, bounds["+X"]);
-					if (bounds.ContainsKey ("-X")) {
-						float min_x = Vector3.Dot (frame.right, bounds["-X"]);
-						shift.x += (max_x + min_x) / 2 - mid.x;
-					} else {
-						shift.x += max_x - maxs.x;
-					}
-				} else if (bounds.ContainsKey ("-X")) {
-					float min_x = Vector3.Dot (frame.right, bounds["-X"]);
-					shift.x += min_x - mins.x;
-				}
-				if (bounds.ContainsKey ("+Y")) {
-					shift.y = -pos.y;
-					float max_y = Vector3.Dot (frame.up, bounds["+Y"]);
-					if (bounds.ContainsKey ("-Y")) {
-						float min_y = Vector3.Dot (frame.up, bounds["-Y"]);
-						shift.y += (max_y + min_y) / 2 - mid.y;
-					} else {
-						shift.y += max_y - maxs.y;
-					}
-				} else if (bounds.ContainsKey ("-Y")) {
-					shift.y = -pos.y;
-					float min_y = Vector3.Dot (frame.up, bounds["-Y"]);
-					shift.y += min_y - mins.y;
-				}
-				if (bounds.ContainsKey ("+Z")) {
-					float max_z = Vector3.Dot (frame.forward, bounds["+Z"]);
-					if (bounds.ContainsKey ("-Z")) {
-						float min_z = Vector3.Dot (frame.forward, bounds["-Z"]);
-						shift.z += (max_z + min_z) / 2 - mid.z;
-					} else {
-						shift.z += max_z - maxs.z;
-					}
-				} else if (bounds.ContainsKey ("-Z")) {
-					float min_z = Vector3.Dot (frame.forward, bounds["-Z"]);
-					shift.z += min_z - mins.z;
-				}
-
-				return shift;
-			}
-		}
-
-		Quaternion GetOrientation (Points p)
-		{
-			var x = p.GetDirection ("X");
-			var y = p.GetDirection ("Y");
-			var z = p.GetDirection ("Z");
-			Quaternion rot;
-			if (y.IsZero ()) {
-				if (z.IsZero () && x.IsZero ()) {
-					x = Vector3d.Cross (p.LocalUp (), Vector3d.up);
-					x.Normalize ();
-					z = Vector3d.Cross (x, p.LocalUp ());
-				} else if (z.IsZero ()) {
-					z = Vector3d.Cross (x, p.LocalUp ());
-					z.Normalize ();
-				} else if (x.IsZero ()) {
-					x = Vector3d.Cross (p.LocalUp (), z);
-					x.Normalize ();
-				}
-				rot = p.ChooseRotation (x, z);
-			} else if (x.IsZero ()) {
-				// y is not zero
-				if (z.IsZero ()) {
-					// use local up for x
-					z = Vector3d.Cross (p.LocalUp (), y);
-					z.Normalize ();
-				} else {
-					z = Vector3d.Normalize (z - Vector3d.Dot (z, p.LocalUp ()) * p.LocalUp ());
-				}
-				rot = Quaternion.LookRotation (z, y);
-			} else if (z.IsZero ()) {
-				// neither x nor y are zero
-				rot = p.ChooseRotation (y, x);
-			} else {
-				// no direction is 0
-				rot = p.ChooseRotation (x, z, y);
-			}
-			return rot;
 		}
 
 		public void SetCraftMass (double mass)
@@ -395,7 +227,7 @@ namespace ExtraplanetaryLaunchpads {
 			return ModifierChangeWhen.CONSTANTLY;
 		}
 
-		public Transform PlaceShip (ShipConstruct ship, ExBuildControl.Box vessel_bounds)
+		public Transform PlaceShip (ShipConstruct ship, ELBuildControl.Box vessel_bounds)
 		{
 			if (site == null) {
 				return part.transform;
@@ -404,14 +236,11 @@ namespace ExtraplanetaryLaunchpads {
 			xform = part.FindModelTransform ("EL launch pos");
 
 			var points = new Points (site);
-			Transform t = part.transform;
 			GameObject launchPos = new GameObject ("EL launch pos");
-			launchPos.transform.parent = t;
-			launchPos.transform.position = t.position;
-			launchPos.transform.position += points.center - part.vessel.GetWorldPos3D ();
-			launchPos.transform.rotation = GetOrientation (points);
+			launchPos.transform.position = points.center;
+			launchPos.transform.rotation = points.GetOrientation ();
 			xform = launchPos.transform;
-			Debug.Log (String.Format ("[EL] launchPos {0} {1}", xform.position, xform.rotation));
+			Debug.LogFormat ("[EL SurveyStation] launchPos {0} {1}", xform.position, xform.rotation);
 
 			float angle;
 			Vector3 axis;
@@ -434,12 +263,17 @@ namespace ExtraplanetaryLaunchpads {
 
 		public override void OnLoad (ConfigNode node)
 		{
+			if (HighLogic.LoadedScene == GameScenes.FLIGHT) {
+				Debug.Log (String.Format ("[EL SurveyStation] {0} cap: {1} seats: {2}",
+						  part, part.CrewCapacity,
+						  part.FindModulesImplementing<KerbalSeat> ().Count));
+			}
 			control.Load (node);
 		}
 
 		public override void OnAwake ()
 		{
-			control = new ExBuildControl (this);
+			control = new ELBuildControl (this);
 		}
 
 		public override void OnStart (PartModule.StartState state)
@@ -452,9 +286,9 @@ namespace ExtraplanetaryLaunchpads {
 			GameEvents.onVesselSituationChange.Add (onVesselSituationChange);
 			GameEvents.onCrewTransferred.Add (onCrewTransferred);
 			StartCoroutine (WaitAndDetermineRange ());
-			ExSurveyTracker.onSiteAdded.Add (onSiteAdded);
-			ExSurveyTracker.onSiteRemoved.Add (onSiteRemoved);
-			ExSurveyTracker.onSiteModified.Add (onSiteModified);
+			ELSurveyTracker.onSiteAdded.Add (onSiteAdded);
+			ELSurveyTracker.onSiteRemoved.Add (onSiteRemoved);
+			ELSurveyTracker.onSiteModified.Add (onSiteModified);
 		}
 
 		void OnDestroy ()
@@ -463,30 +297,30 @@ namespace ExtraplanetaryLaunchpads {
 				control.OnDestroy ();
 				GameEvents.onVesselSituationChange.Remove (onVesselSituationChange);
 				GameEvents.onCrewTransferred.Remove (onCrewTransferred);
-				ExSurveyTracker.onSiteAdded.Remove (onSiteAdded);
-				ExSurveyTracker.onSiteRemoved.Remove (onSiteRemoved);
-				ExSurveyTracker.onSiteModified.Remove (onSiteModified);
+				ELSurveyTracker.onSiteAdded.Remove (onSiteAdded);
+				ELSurveyTracker.onSiteRemoved.Remove (onSiteRemoved);
+				ELSurveyTracker.onSiteModified.Remove (onSiteModified);
 			}
 		}
 
 		[KSPEvent (guiActive = true, guiName = "Hide UI", active = false)]
 		public void HideUI ()
 		{
-			ExBuildWindow.HideGUI ();
+			ELBuildWindow.HideGUI ();
 		}
 
 		[KSPEvent (guiActive = true, guiName = "Show UI", active = false)]
 		public void ShowUI ()
 		{
-			ExBuildWindow.ShowGUI ();
-			ExBuildWindow.SelectPad (control);
+			ELBuildWindow.ShowGUI ();
+			ELBuildWindow.SelectPad (control);
 		}
 
 		[KSPEvent (guiActive = true, guiActiveEditor = true,
 				   guiName = "Rename", active = true)]
 		public void ShowRenameUI ()
 		{
-			ExRenameWindow.ShowGUI (this);
+			ELRenameWindow.ShowGUI (this);
 		}
 
 		public void UpdateMenus (bool visible)
@@ -497,11 +331,11 @@ namespace ExtraplanetaryLaunchpads {
 
 		void FindSites ()
 		{
-			available_sites = ExSurveyTracker.instance.FindSites (vessel, range);
+			available_sites = ELSurveyTracker.instance.FindSites (vessel, range);
 			if (available_sites == null || available_sites.Count < 1) {
 				Highlight (false);
-				site = null;
 				site_list = null;
+				SetSite (null);
 			} else {
 				var slist = new List<string> ();
 				for (int ind = 0; ind < available_sites.Count; ind++) {
@@ -509,11 +343,10 @@ namespace ExtraplanetaryLaunchpads {
 				}
 				if (!available_sites.Contains (site)) {
 					Highlight (false);
-					site = available_sites[0];
+					SetSite (available_sites[0]);
 				}
 				site_list = new DropDownList (slist);
 			}
-			Debug.Log (String.Format ("[EL SS] site: '{0}'", site));
 		}
 
 		IEnumerator WaitAndFindSites ()
@@ -539,17 +372,23 @@ namespace ExtraplanetaryLaunchpads {
 			int bestLevel = -2;
 			foreach (var crew in crewList) {
 				int level = -1;
-				if (crew.GetEffect<ExSurveySkill> () != null) {
+				if (crew.GetEffect<ELSurveySkill> () != null) {
 					level = crew.experienceLevel;
 				}
 				if (level > bestLevel) {
 					bestLevel = level;
 				}
+				Debug.LogFormat ("[EL SurveyStation] Kerbal: {0} {1} {2} {3}",
+								 crew.name,
+								 crew.GetEffect<ELSurveySkill> () != null,
+								 crew.experienceLevel, level);
 			}
 			if (bestLevel > 5) {
 				bestLevel = 5;
 			}
 			range = site_ranges[bestLevel + 2];
+			Debug.LogFormat ("[EL SurveyStation] best level: {0}, range: {1}",
+							 bestLevel, range);
 			if (canBuild) {
 				StartCoroutine (WaitAndFindSites ());
 			}
@@ -560,9 +399,7 @@ namespace ExtraplanetaryLaunchpads {
 			if (vs.host != vessel) {
 				return;
 			}
-			if (canBuild) {
-				StartCoroutine (WaitAndFindSites ());
-			}
+			DetermineRange ();
 		}
 
 		void onCrewTransferred (GameEvents.HostedFromToAction<ProtoCrewMember,Part> hft)
@@ -570,18 +407,21 @@ namespace ExtraplanetaryLaunchpads {
 			if (hft.from != part && hft.to != part) {
 				return;
 			}
-			Debug.Log (String.Format ("[EL SurveyStation] transfer: {0} {1} {2}",
-									  hft.host, hft.from, hft.to));
+			Debug.LogFormat ("[EL SurveyStation] transfer: {0} {1} {2}",
+							 hft.host, hft.from, hft.to);
 			StartCoroutine (WaitAndDetermineRange ());
 		}
 
 		void onSiteAdded (SurveySite s)
 		{
+			Debug.LogFormat ("[ELSurveyStation] onSiteAdded");
 			FindSites ();
+			SetSite (site);
 		}
 
 		void onSiteRemoved (SurveySite s)
 		{
+			Debug.LogFormat ("[ELSurveyStation] onSiteRemoved");
 			if (s == site) {
 				site = null;
 			}
@@ -590,7 +430,26 @@ namespace ExtraplanetaryLaunchpads {
 
 		void onSiteModified (SurveySite s)
 		{
+			Debug.LogFormat ("[ELSurveyStation] onSiteModified");
 			FindSites ();
+			SetSite (site);
+		}
+
+		public void DoWork (double kerbalHours)
+		{
+			control.DoWork (kerbalHours);
+		}
+
+		public bool isActive
+		{
+			get {
+				return control.isActive;
+			}
+		}
+
+		public double CalculateWork ()
+		{
+			return control.CalculateWork();
 		}
 	}
 }

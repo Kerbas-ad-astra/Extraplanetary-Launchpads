@@ -11,9 +11,16 @@ GIT		:= git
 TAR		:= tar
 ZIP		:= zip
 
-all:
+SUBDIRS=\
+	ExtraplanetaryLaunchpads/Parts/ControlReference	\
+	ExtraplanetaryLaunchpads/Parts/MicroPad	\
+	ExtraplanetaryLaunchpads/Parts/smelter	\
+	$e
 
-clean:
+all clean:
+	@for dir in ${SUBDIRS}; do \
+		make -C $$dir $@ || exit 1; \
+	done
 
 info:
 	@echo "Extraplanetary Launchpads Build Information"

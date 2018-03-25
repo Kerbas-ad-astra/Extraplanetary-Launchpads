@@ -24,64 +24,88 @@ using KSP.IO;
 
 namespace ExtraplanetaryLaunchpads {
 
-	[KSPAddon (KSPAddon.Startup.EveryScene, false)]
-	public class ExRenameWindow: MonoBehaviour
+	[KSPAddon (KSPAddon.Startup.FlightAndEditor, false)]
+	public class ELRenameWindow: MonoBehaviour
 	{
-		private static ExBuildControl.IBuilder padInstance = null;
-		private static ExRenameWindow windowInstance = null;
-		private static bool gui_enabled = false;
+		private static ELBuildControl.IBuilder padInstance = null;
+		private static ELRenameWindow windowInstance = null;
 		private static Rect windowpos = new Rect(Screen.width * 0.35f,Screen.height * 0.1f,1,1);
-		private static string newName;
+		const string fieldName = "RenameWindow.ExtraplanetaryLaunchpads";
+		private static TextField nameField = new TextField (fieldName);
 
 		void Awake ()
 		{
-			if (!HighLogic.LoadedSceneIsEditor
-				&& !HighLogic.LoadedSceneIsFlight) {
-				Destroy (this);
-				return;
-			}
 			windowInstance = this;
-			enabled = true;
-			gui_enabled = false;
+			enabled = false;
+		}
+
+		void OnDestroy ()
+		{
+			Debug.Log("[ELRenameWindow] OnDestroy");
+			windowInstance = null;
+			padInstance = null;
 		}
 
 		public static void HideGUI ()
 		{
-			gui_enabled = false;
+			if (windowInstance != null) {
+				windowInstance.enabled = false;
+			}
+			ClearControlLock ();
 		}
 
-		public static void ShowGUI (ExBuildControl.IBuilder pad)
+		public static void ShowGUI (ELBuildControl.IBuilder pad)
 		{
 			padInstance = pad;
-			newName = pad.Name;
-			gui_enabled = true;
+			nameField.text = pad.Name;
 			if (windowInstance != null) {
 				windowInstance.enabled = true;
 			}
+		}
+
+		void RenamePad ()
+		{
+			if (padInstance.Name != nameField.text) {
+				padInstance.Name = nameField.text;
+				ELBuildWindow.updateCurrentPads ();
+			}
+		}
+
+		void RenameField ()
+		{
+			GUILayout.BeginHorizontal ();
+			GUILayout.Label ("Rename launchpad: ");
+
+			if (nameField.HandleInput ()) {
+				RenamePad ();
+				HideGUI ();
+			}
+			GUILayout.EndHorizontal ();
+		}
+
+		void OKCancelButtons ()
+		{
+			GUILayout.BeginHorizontal ();
+			GUILayout.FlexibleSpace ();
+			if (GUILayout.Button ("OK")) {
+				nameField.AcceptInput ();
+				RenamePad ();
+				HideGUI ();
+			}
+			GUILayout.FlexibleSpace ();
+			if (GUILayout.Button ("Cancel")) {
+				HideGUI ();
+			}
+			GUILayout.FlexibleSpace ();
+			GUILayout.EndHorizontal ();
 		}
 
 		void WindowGUI (int windowID)
 		{
 			GUILayout.BeginVertical ();
 
-			GUILayout.BeginHorizontal ();
-			GUILayout.Label ("Rename launchpad: ");
-			newName = GUILayout.TextField (newName);
-			GUILayout.EndHorizontal ();
-
-			GUILayout.BeginHorizontal ();
-			GUILayout.FlexibleSpace ();
-			if (GUILayout.Button ("OK")) {
-				padInstance.Name = newName;
-				gui_enabled = false;
-				ExBuildWindow.updateCurrentPads ();
-			}
-			GUILayout.FlexibleSpace ();
-			if (GUILayout.Button ("Cancel")) {
-				gui_enabled = false;
-			}
-			GUILayout.FlexibleSpace ();
-			GUILayout.EndHorizontal ();
+			RenameField ();
+			OKCancelButtons ();
 
 			GUILayout.EndVertical ();
 
@@ -89,20 +113,27 @@ namespace ExtraplanetaryLaunchpads {
 
 		}
 
+		static void SetControlLock ()
+		{
+			InputLockManager.SetControlLock ("EL_Rename_window_lock");
+		}
+
+		static void ClearControlLock ()
+		{
+			InputLockManager.RemoveControlLock ("EL_Rename_window_lock");
+		}
+
 		void OnGUI ()
 		{
-			if (gui_enabled) {
-				//enabled = true;
-				GUI.skin = HighLogic.Skin;
-				windowpos = GUILayout.Window (GetInstanceID (),
-					windowpos, WindowGUI,
-					"Rename Launchpad",
-					GUILayout.Width(500));
-			}
-			if (enabled && windowpos.Contains (new Vector2 (Input.mousePosition.x, Screen.height - Input.mousePosition.y))) {
-				InputLockManager.SetControlLock ("EL_Rename_window_lock");
+			GUI.skin = HighLogic.Skin;
+			windowpos = GUILayout.Window (GetInstanceID (),
+				windowpos, WindowGUI,
+				"Rename Launchpad",
+				GUILayout.Width(500));
+			if (windowpos.Contains(Event.current.mousePosition)) {
+				SetControlLock ();
 			} else {
-				InputLockManager.RemoveControlLock ("EL_Rename_window_lock");
+				ClearControlLock ();
 			}
 		}
 	}

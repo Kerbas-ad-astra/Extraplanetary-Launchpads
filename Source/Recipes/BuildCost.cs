@@ -23,31 +23,31 @@ using UnityEngine;
 namespace ExtraplanetaryLaunchpads {
 	public class BuildCost
 	{
-		public VesselResources resources;
-		public VesselResources container;
-		public VesselResources hullResoures;
+		public RMResourceSet resources;
+		public RMResourceSet container;
+		public RMResourceSet hullResoures;
 		public double mass;
 
 		public BuildCost ()
 		{
-			resources = new VesselResources ();
-			container = new VesselResources ();
-			hullResoures = new VesselResources ();
+			resources = new RMResourceSet ();
+			container = new RMResourceSet ();
+			hullResoures = new RMResourceSet ();
 		}
 
 		public void addPart (Part part)
 		{
-			if (ExSettings.KIS_Present) {
+			if (ELSettings.KIS_Present) {
 				KIS.KISWrapper.GetResources (part, container.resources);
 			}
-			ExRecipeDatabase.ProcessPart (part, hullResoures.resources);
+			ELRecipeDatabase.ProcessPart (part, hullResoures.resources);
 			resources.AddPart (part);
 			mass += part.mass;
 		}
 
 		public void removePart (Part part)
 		{
-			if (ExSettings.KIS_Present) {
+			if (ELSettings.KIS_Present) {
 				container.RemovePart (part);
 			}
 			hullResoures.RemovePart (part);
@@ -55,15 +55,15 @@ namespace ExtraplanetaryLaunchpads {
 			mass -= part.mass;
 		}
 
-		void ProcessResources (VesselResources resources, BuildResourceSet report_resources, BuildResourceSet required_resources = null)
+		void ProcessResources (RMResourceSet resources, BuildResourceSet report_resources, BuildResourceSet required_resources = null)
 		{
 			var reslist = resources.resources.Keys.ToList ();
 			foreach (string res in reslist) {
 				double amount = resources.ResourceAmount (res);
-				var recipe = ExRecipeDatabase.ResourceRecipe (res);
+				var recipe = ELRecipeDatabase.ResourceRecipe (res);
 
 				if (recipe != null) {
-					double density = ExRecipeDatabase.ResourceDensity (res);
+					double density = ELRecipeDatabase.ResourceDensity (res);
 					double mass = amount * density;
 					recipe = recipe.Bake (mass);
 					foreach (var ingredient in recipe.ingredients) {

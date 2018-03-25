@@ -25,14 +25,39 @@ using KSP.IO;
 
 namespace ExtraplanetaryLaunchpads {
 
-public class ExRecycler : PartModule, IModuleInfo, IPartMassModifier
+public class ELRecycler : PartModule, IModuleInfo, IPartMassModifier, ELControlInterface
 {
 	[KSPField] public float RecycleRate = 1.0f;
 	[KSPField] public string RecycleField_name = "RecycleField";
 	[KSPField (guiName = "State", guiActive = true)] public string status;
 
+	[KSPField (isPersistant = true)]
+	public bool Operational = true;
+
 	Collider RecycleField;
 	RecyclerFSM sm;
+
+	public bool isBusy
+	{
+		get {return sm != null && sm.isBusy; }
+	}
+
+	public bool canOperate
+	{
+		get { return Operational; }
+		set {
+			Operational = value;
+			Events["Activate"].active = value;
+			Events["Deactivate"].active = false;
+			if (sm != null) {
+				if (value) {
+					sm.Enable ();
+				} else {
+					sm.Disable ();
+				}
+			}
+		}
+	}
 
 	public override string GetInfo ()
 	{
@@ -107,16 +132,6 @@ public class ExRecycler : PartModule, IModuleInfo, IPartMassModifier
 		status = "Inactive";
 		if (sm != null) {
 			sm.Disable ();
-		}
-	}
-
-	[KSPEvent (guiActive=false, active = true)]
-	void ExDiscoverWorkshops (BaseEventData data)
-	{
-		// Recyclers are not actual work-sinks, but the master is needed
-		// to check the vessel producitivity
-		if (sm != null) {
-			sm.SetMaster (data.Get<ExWorkshop> ("master"));
 		}
 	}
 

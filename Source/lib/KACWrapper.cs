@@ -71,14 +71,10 @@ namespace ExtraplanetaryLaunchpads_KACWrapper
             LogFormatted("Attempting to Grab KAC Types...");
 
             //find the base type
-            KACType = null;
-			AssemblyLoader.loadedAssemblies.TypeOperation(t =>
-			{
-				if (t.FullName == "KerbalAlarmClock.KerbalAlarmClock")
-				{
-					KACType = t;
-				}
-			});
+            KACType = AssemblyLoader.loadedAssemblies
+                .Select(a => a.assembly.GetTypes())
+                .SelectMany(t => t)
+                .FirstOrDefault(t => t.FullName == "KerbalAlarmClock.KerbalAlarmClock");
 
             if (KACType == null)
             {
@@ -91,16 +87,12 @@ namespace ExtraplanetaryLaunchpads_KACWrapper
                 //No TimeEntry or alarmchoice options = need a newer version
                 NeedUpgrade = true;
             }
-
-			//now the Alarm Type
-			KACAlarmType = null;
-            AssemblyLoader.loadedAssemblies.TypeOperation(t =>
-			{
-				if (t.FullName == "KerbalAlarmClock.KACAlarm")
-				{
-					KACAlarmType = t;
-				}
-			});
+            
+            //now the Alarm Type
+            KACAlarmType = AssemblyLoader.loadedAssemblies
+                .Select(a => a.assembly.GetTypes())
+                .SelectMany(t => t)
+                .FirstOrDefault(t => t.FullName == "KerbalAlarmClock.KACAlarm");
 
             if (KACAlarmType == null)
             {
